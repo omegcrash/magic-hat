@@ -1,0 +1,13 @@
+# Magic Hat — Daily Backup Timer
+# Copyright (c) 2026 George Scott Foley — MIT License
+
+[Unit]
+Description=Magic Hat Daily Backup
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=900
+Persistent=true
+
+[Install]
+WantedBy=timers.target

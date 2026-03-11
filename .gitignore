@@ -1,0 +1,21 @@
+# Build artifacts
+dist/
+*.iso
+*.qcow2
+*.ova
+*.img
+
+# Temp
+/tmp/
+*.log
+*.bak
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db

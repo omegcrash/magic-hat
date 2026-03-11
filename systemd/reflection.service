@@ -1,0 +1,67 @@
+# Magic Hat — Reflection AI Platform Service
+# Copyright (c) 2026 George Scott Foley — MIT License
+
+[Unit]
+Description=Reflection AI Platform
+Documentation=https://github.com/omegcrash/reflection
+After=network-online.target postgresql.service redis.service
+Wants=network-online.target
+Requires=postgresql.service redis.service
+
+[Service]
+Type=notify
+User=magichat
+Group=magichat
+WorkingDirectory=/home/magichat
+
+# Environment
+Environment=REFLECTION_ENV=production
+Environment=REFLECTION_HOST=127.0.0.1
+Environment=REFLECTION_PORT=8000
+Environment=REFLECTION_WORKERS=4
+EnvironmentFile=-/etc/magichat/reflection.env
+
+# Exec
+ExecStartPre=/usr/bin/python3.11 -m reflection migrate
+ExecStart=/usr/bin/python3.11 -m reflection serve \
+    --host ${REFLECTION_HOST} \
+    --port ${REFLECTION_PORT} \
+    --workers ${REFLECTION_WORKERS}
+
+# Watchdog
+WatchdogSec=30
+NotifyAccess=all
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/magichat/.familiar /home/magichat/.reflection /var/log/magichat
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+MemoryMax=2G
+CPUQuota=80%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=reflection
+
+[Install]
+WantedBy=multi-user.target

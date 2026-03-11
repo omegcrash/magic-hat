@@ -1,0 +1,17 @@
+# Magic Hat — Database Backup Service
+# Copyright (c) 2026 George Scott Foley — MIT License
+
+[Unit]
+Description=Magic Hat PostgreSQL Backup
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=magichat
+Group=magichat
+
+ExecStart=/opt/magichat/scripts/backup.sh
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=magichat-backup

@@ -1,0 +1,105 @@
+# Magic Hat — GitHub Actions CI
+# Copyright (c) 2026 George Scott Foley — MIT License
+#
+# Builds ISO on tag push, publishes to GitHub Releases.
+
+name: Build Magic Hat ISO
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number'
+        required: true
+        default: '0.1.0'
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:41
+      options: --privileged
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          dnf install -y lorax mkksiso curl coreutils
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build ISO
+        run: |
+          chmod +x scripts/build-iso.sh
+          ./scripts/build-iso.sh ${{ steps.version.outputs.version }}
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: magichat-iso
+          path: dist/magichat-*.iso*
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/magichat-*.iso
+            dist/magichat-*.sha256
+          body: |
+            ## Magic Hat ${{ steps.version.outputs.version }}
+
+            Purpose-built Linux server for the Familiar AI ecosystem.
+
+            ### Install
+            1. Download the ISO
+            2. Verify: `sha256sum -c magichat-*.sha256`
+            3. Boot from ISO (bare metal or VM)
+            4. Follow the first-boot wizard
+
+            Or install on existing Fedora Server:
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/omegcrash/magic-hat/master/scripts/install.sh | sudo bash
+            ```
+
+  validate-kickstart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Kickstart syntax
+        run: |
+          # Basic syntax check — ensure no broken heredocs or unclosed sections
+          grep -c '%packages' kickstart/magichat.ks | grep -q 1
+          grep -c '%end' kickstart/magichat.ks | grep -q 2
+          grep -c '%post' kickstart/magichat.ks | grep -q 1
+          echo "Kickstart syntax OK"
+
+      - name: Validate systemd units
+        run: |
+          for f in systemd/*.service systemd/*.timer; do
+            if head -1 "$f" | grep -q '^\[Unit\]\|^#'; then
+              echo "OK: $f"
+            else
+              echo "FAIL: $f — missing [Unit] header"
+              exit 1
+            fi
+          done
+
+      - name: Shellcheck scripts
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './scripts'
+          severity: warning

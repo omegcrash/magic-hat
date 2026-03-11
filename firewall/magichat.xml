@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Hat — firewalld Zone
+  Copyright (c) 2026 George Scott Foley — MIT License
+
+  Allows only SSH, HTTP (redirect to HTTPS), and HTTPS.
+  All other inbound traffic is dropped.
+-->
+<zone target="DROP">
+  <short>Magic Hat</short>
+  <description>Magic Hat server zone — SSH + HTTPS only, all else dropped.</description>
+
+  <!-- SSH (consider changing to a non-standard port in production) -->
+  <service name="ssh"/>
+
+  <!-- HTTP (Let's Encrypt challenges + redirect to HTTPS) -->
+  <service name="http"/>
+
+  <!-- HTTPS (Nginx → Reflection) -->
+  <service name="https"/>
+
+  <!-- ICMP ping (useful for monitoring, can disable if desired) -->
+  <icmp-block-inversion/>
+  <icmp-block name="echo-reply"/>
+</zone>
