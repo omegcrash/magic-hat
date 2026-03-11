@@ -19,6 +19,9 @@
   <!-- HTTPS (Nginx → Reflection) -->
   <service name="https"/>
 
+  <!-- First-boot wizard (port 8080, removed after setup) -->
+  <port protocol="tcp" port="8080"/>
+
   <!-- ICMP ping (useful for monitoring, can disable if desired) -->
   <icmp-block-inversion/>
   <icmp-block name="echo-reply"/>

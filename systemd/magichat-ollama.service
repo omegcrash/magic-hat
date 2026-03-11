@@ -1,0 +1,87 @@
+# Magic Hat — Ollama LLM Inference Service
+# Copyright (c) 2026 George Scott Foley — MIT License
+#
+# Manages the Ollama inference server for local model serving.
+# Familiar connects to this on http://127.0.0.1:11434.
+#
+# Environment variables in /etc/magichat/ollama.env control:
+#   OLLAMA_NUM_PARALLEL  — concurrent requests per model
+#   OLLAMA_MAX_LOADED_MODELS — VRAM budget (models kept in memory)
+#   OLLAMA_FLASH_ATTENTION — enable flash attention
+#   OLLAMA_MODELS — model storage path
+
+[Unit]
+Description=Magic Hat — Ollama LLM Inference Server
+Documentation=https://github.com/ollama/ollama
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=magichat
+Group=magichat
+
+# Environment — tuned for server use
+Environment=OLLAMA_HOST=127.0.0.1:11434
+Environment=OLLAMA_MODELS=/var/lib/magichat/models
+Environment=OLLAMA_NUM_PARALLEL=4
+Environment=OLLAMA_MAX_LOADED_MODELS=2
+Environment=OLLAMA_FLASH_ATTENTION=1
+Environment=OLLAMA_KEEP_ALIVE=10m
+Environment=HOME=/home/magichat
+EnvironmentFile=-/etc/magichat/ollama.env
+
+# Exec
+ExecStartPre=/usr/local/bin/magichat-model-check
+ExecStart=/usr/local/bin/ollama serve
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/magichat/models /home/magichat/.ollama /tmp
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RemoveIPC=yes
+UMask=0077
+
+# System call filtering — looser than Reflection (needs GPU ioctls)
+SystemCallFilter=@system-service @io-event
+SystemCallFilter=~@mount @reboot @swap @clock @module
+SystemCallArchitectures=native
+SystemCallErrorNumber=EPERM
+
+# Capabilities — needs device access for GPU
+CapabilityBoundingSet=CAP_SYS_RAWIO
+AmbientCapabilities=
+
+# Resource limits — generous for inference
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+LimitCORE=0
+TasksMax=512
+
+# GPU: Allow access to NVIDIA/AMD devices
+# SupplementaryGroups set by install script (render, video)
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=magichat-ollama
+
+[Install]
+WantedBy=multi-user.target

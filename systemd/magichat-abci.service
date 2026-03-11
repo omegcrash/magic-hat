@@ -1,0 +1,86 @@
+# Magic Hat — Python ABCI Application Service
+# Copyright (c) 2026 George Scott Foley — MIT License
+#
+# Runs the Python ABCI application that handles all Dross Chain business logic:
+# genesis registry, Dross minting/transfer/burn, provenance anchoring,
+# marketplace, licensing, governance.
+#
+# CometBFT (magichat-chain.service) connects to this on port 26658.
+# All IPT math and GEL economics live in this application.
+
+[Unit]
+Description=Magic Hat — Dross Chain ABCI Application
+Documentation=https://github.com/omegcrash/magic-hat
+After=network-online.target
+Wants=network-online.target
+Requires=magichat-chain.service
+
+[Service]
+Type=simple
+User=magichat
+Group=magichat
+WorkingDirectory=/opt/magichat
+
+# Python ABCI application
+ExecStart=/usr/bin/python3.11 -m chain.app \
+    --host 127.0.0.1 \
+    --port 26658 \
+    --state-dir /var/lib/magichat/chain \
+    --log-level INFO
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# Security hardening — CIS + OWASP Agentic Top 10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/magichat/chain /var/log/magichat
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+RemoveIPC=yes
+UMask=0077
+
+# System call filtering
+SystemCallFilter=@system-service
+SystemCallFilter=~@mount @reboot @swap @clock @module @raw-io @debug
+SystemCallArchitectures=native
+SystemCallErrorNumber=EPERM
+
+# Capabilities — ABCI app only needs loopback network
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Network isolation — only loopback (talks to CometBFT on localhost)
+IPAddressAllow=127.0.0.0/8 ::1/128
+
+# Resource limits
+LimitNOFILE=65536
+LimitCORE=0
+MemoryMax=512M
+TasksMax=128
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=magichat-abci
+
+[Install]
+WantedBy=multi-user.target

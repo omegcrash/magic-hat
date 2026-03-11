@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-MAGICHAT_VERSION="0.1.0"
+MAGICHAT_VERSION="0.3.0"
 MAGICHAT_DIR="/opt/magichat"
 MAGICHAT_USER="magichat"
 REPO_URL="https://raw.githubusercontent.com/omegcrash/magic-hat/master"
@@ -32,28 +32,38 @@ if ! grep -qi "fedora" /etc/os-release 2>/dev/null; then
     [[ $REPLY =~ ^[Yy]$ ]] || exit 1
 fi
 
-echo "[1/10] Installing system packages..."
+echo "[1/12] Installing system packages..."
 dnf install -y \
     postgresql-server postgresql-contrib \
     redis nginx certbot python3-certbot-nginx \
     podman podman-compose \
     fail2ban firewalld \
     python3.11 python3.11-pip python3.11-devel \
-    dnf-automatic cronie rsync \
+    dnf-automatic cronie rsync tar gzip unzip p7zip xz bzip2 \
+    nano vim-enhanced tmux screen htop iotop sysstat git jq \
+    curl wget bind-utils net-tools traceroute \
+    lshw pciutils usbutils \
+    libreoffice-headless libreoffice-writer libreoffice-calc libreoffice-impress \
+    poppler-utils ImageMagick \
+    ffmpeg sox mediainfo perl-Image-ExifTool \
+    ghostscript pandoc tesseract tesseract-langpack-eng \
+    smartmontools nvme-cli lm-sensors gnupg2 git-lfs \
+    google-noto-sans-fonts liberation-fonts-common \
+    liberation-mono-fonts liberation-sans-fonts liberation-serif-fonts \
     audit aide openssh-server \
     policycoreutils-python-utils setools-console \
     crypto-policies-scripts
 
-echo "[2/10] Creating service user..."
+echo "[2/12] Creating service user..."
 if ! id "${MAGICHAT_USER}" &>/dev/null; then
     useradd --system --create-home --shell /bin/bash --comment "Magic Hat service" "${MAGICHAT_USER}"
 fi
 
-echo "[3/10] Installing Reflection..."
+echo "[3/12] Installing Reflection..."
 python3.11 -m pip install --upgrade pip
 python3.11 -m pip install "reflection-agent[full]"
 
-echo "[4/10] Configuring PostgreSQL..."
+echo "[4/12] Configuring PostgreSQL..."
 if [[ ! -f /var/lib/pgsql/data/PG_VERSION ]]; then
     postgresql-setup --initdb
 fi
@@ -68,7 +78,7 @@ su - postgres -c "psql -c \"ALTER USER reflection WITH PASSWORD '${DB_PASSWORD}'
 su - postgres -c "psql -c \"CREATE DATABASE reflection OWNER reflection;\"" 2>/dev/null || true
 su - postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE reflection TO reflection;\""
 
-echo "[5/10] Configuring Redis..."
+echo "[5/12] Configuring Redis..."
 REDIS_PASSWORD=$(python3.11 -c "import secrets; print(secrets.token_urlsafe(32))")
 mkdir -p /etc/redis/redis.conf.d
 cat > /etc/redis/redis.conf.d/magichat.conf << EOF
@@ -82,8 +92,8 @@ save 60 10000
 EOF
 systemctl enable --now redis
 
-echo "[6/10] Installing Magic Hat configs..."
-mkdir -p "${MAGICHAT_DIR}"/{scripts,systemd,nginx,firewall,firstboot}
+echo "[6/12] Installing Magic Hat configs..."
+mkdir -p "${MAGICHAT_DIR}"/{scripts,systemd,nginx,firewall,firstboot,lib}
 mkdir -p /etc/magichat
 mkdir -p /var/backups/magichat
 mkdir -p /var/log/magichat
@@ -118,7 +128,12 @@ curl -fsSL "${REPO_URL}/nginx/reflection.conf" -o /etc/nginx/conf.d/reflection.c
 curl -fsSL "${REPO_URL}/firewall/jail.local" -o /etc/fail2ban/jail.local
 curl -fsSL "${REPO_URL}/scripts/backup.sh" -o "${MAGICHAT_DIR}/scripts/backup.sh"
 curl -fsSL "${REPO_URL}/scripts/magichat" -o /usr/local/bin/magichat
+curl -fsSL "${REPO_URL}/scripts/provider-health.sh" -o "${MAGICHAT_DIR}/scripts/provider-health.sh"
+curl -fsSL "${REPO_URL}/scripts/configure-providers.sh" -o "${MAGICHAT_DIR}/scripts/configure-providers.sh"
+curl -fsSL "${REPO_URL}/scripts/desktop.sh" -o "${MAGICHAT_DIR}/scripts/desktop.sh"
 chmod +x "${MAGICHAT_DIR}/scripts/backup.sh" /usr/local/bin/magichat
+chmod +x "${MAGICHAT_DIR}/scripts/provider-health.sh" "${MAGICHAT_DIR}/scripts/configure-providers.sh"
+chmod +x "${MAGICHAT_DIR}/scripts/desktop.sh"
 
 # Install systemd units
 cp "${MAGICHAT_DIR}"/systemd/*.service /etc/systemd/system/
@@ -130,7 +145,44 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -out /etc/pki/tls/certs/magichat-selfsigned.pem \
     -subj "/CN=magichat.local" 2>/dev/null
 
-echo "[7/10] Applying security hardening..."
+echo "[7/12] Installing Ollama..."
+# Install Ollama (official installer, runs as user not daemon)
+curl -fsSL https://ollama.com/install.sh | OLLAMA_INSTALL_ONLY=1 sh 2>/dev/null || {
+    echo "  WARN: Ollama auto-install failed. Install manually: https://ollama.com/download"
+}
+
+# Create model storage directory
+mkdir -p /var/lib/magichat/models
+chown "${MAGICHAT_USER}:${MAGICHAT_USER}" /var/lib/magichat/models
+
+# Ollama environment
+cat > /etc/magichat/ollama.env << 'EOF'
+# Magic Hat — Ollama Configuration
+# Edit to tune inference performance.
+OLLAMA_HOST=127.0.0.1:11434
+OLLAMA_MODELS=/var/lib/magichat/models
+OLLAMA_NUM_PARALLEL=4
+OLLAMA_MAX_LOADED_MODELS=2
+OLLAMA_FLASH_ATTENTION=1
+OLLAMA_KEEP_ALIVE=10m
+EOF
+chmod 644 /etc/magichat/ollama.env
+
+# Install Ollama systemd unit + model check script
+curl -fsSL "${REPO_URL}/systemd/magichat-ollama.service" -o /etc/systemd/system/magichat-ollama.service
+curl -fsSL "${REPO_URL}/scripts/magichat-model-check" -o /usr/local/bin/magichat-model-check
+chmod +x /usr/local/bin/magichat-model-check
+
+# Add service user to GPU groups (needed for NVIDIA/AMD device access)
+usermod -aG render "${MAGICHAT_USER}" 2>/dev/null || true
+usermod -aG video "${MAGICHAT_USER}" 2>/dev/null || true
+
+echo "[8/12] Detecting and configuring GPU..."
+curl -fsSL "${REPO_URL}/scripts/detect-gpu.sh" -o "${MAGICHAT_DIR}/scripts/detect-gpu.sh"
+chmod +x "${MAGICHAT_DIR}/scripts/detect-gpu.sh"
+"${MAGICHAT_DIR}/scripts/detect-gpu.sh" --install || echo "  GPU setup skipped (CPU mode)"
+
+echo "[9/12] Applying security hardening..."
 
 # SSH hardening
 curl -fsSL "${REPO_URL}/security/sshd_magichat.conf" -o /etc/ssh/sshd_config.d/99-magichat.conf
@@ -167,9 +219,19 @@ echo "* hard core 0" >> /etc/security/limits.conf
 # TLS crypto policy — FUTURE (strongest)
 update-crypto-policies --set FUTURE 2>/dev/null || true
 
-echo "[8/10] Enabling services..."
+echo "[10/12] Enabling services..."
+# Install wizard + bridge
+curl -fsSL "${REPO_URL}/firstboot/wizard.py" -o "${MAGICHAT_DIR}/firstboot/wizard.py"
+curl -fsSL "${REPO_URL}/lib/familiar_bridge.py" -o "${MAGICHAT_DIR}/lib/familiar_bridge.py"
+mkdir -p "${MAGICHAT_DIR}/firstboot"
+curl -fsSL "${REPO_URL}/systemd/magichat-wizard.service" -o /etc/systemd/system/magichat-wizard.service
+# Create first-boot marker
+touch "${MAGICHAT_DIR}/.needs-firstboot"
+
 systemctl daemon-reload
+systemctl enable magichat-ollama.service
 systemctl enable reflection.service
+systemctl enable magichat-wizard.service
 systemctl enable magichat-backup.timer
 systemctl enable fail2ban
 systemctl enable nginx
@@ -179,12 +241,14 @@ sed -i 's/apply_updates = no/apply_updates = yes/' /etc/dnf/automatic.conf
 sed -i 's/upgrade_type = default/upgrade_type = security/' /etc/dnf/automatic.conf
 systemctl enable dnf-automatic.timer
 
-echo "[9/10] Starting services..."
+echo "[11/12] Starting services..."
+systemctl start magichat-ollama.service
 systemctl start reflection.service
 systemctl start nginx
 systemctl start fail2ban
+systemctl start magichat-wizard.service
 
-echo "[10/10] Initializing AIDE file integrity database..."
+echo "[12/12] Initializing AIDE file integrity database..."
 aide --init 2>/dev/null && \
     cp /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz 2>/dev/null || \
     echo "  (AIDE will initialize on next boot)"
@@ -198,8 +262,11 @@ echo "  Dashboard: https://$(hostname -f)"
 echo "  Status:    magichat status"
 echo ""
 echo "  Next steps:"
-echo "  1. Run 'magichat setup' to configure domain + TLS"
-echo "  2. Run 'magichat admin' to create admin user"
+echo "  1. Open http://$(hostname -I | awk '{print $1}'):8080 to run the setup wizard"
+echo "     Or configure manually:"
+echo "       magichat models pull   — download a model"
+echo "       magichat setup         — configure domain + TLS"
+echo "       magichat admin         — create admin user"
 echo ""
 echo "  Config: /etc/magichat/reflection.env"
 echo "  Logs:   journalctl -u reflection -f"

@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Magic Hat — Pre-start model validation
+# Copyright (c) 2026 George Scott Foley — MIT License
+#
+# Called by magichat-ollama.service as ExecStartPre.
+# Ensures model storage directory exists and is accessible.
+
+set -euo pipefail
+
+MODEL_DIR="${OLLAMA_MODELS:-/var/lib/magichat/models}"
+
+# Ensure model directory exists
+if [[ ! -d "${MODEL_DIR}" ]]; then
+    mkdir -p "${MODEL_DIR}"
+    echo "[model-check] Created model directory: ${MODEL_DIR}"
+fi
+
+# Verify write access
+if ! touch "${MODEL_DIR}/.health" 2>/dev/null; then
+    echo "[model-check] ERROR: Cannot write to ${MODEL_DIR}"
+    exit 1
+fi
+rm -f "${MODEL_DIR}/.health"
+
+# Log GPU status for debugging
+if command -v nvidia-smi &>/dev/null; then
+    GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo "unknown")
+    GPU_VRAM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader 2>/dev/null | head -1 || echo "unknown")
+    echo "[model-check] NVIDIA GPU: ${GPU_NAME} (${GPU_VRAM})"
+elif command -v rocminfo &>/dev/null; then
+    GPU_NAME=$(rocminfo 2>/dev/null | grep "Marketing Name" | head -1 | sed 's/.*: //' || echo "unknown")
+    echo "[model-check] AMD GPU: ${GPU_NAME}"
+else
+    echo "[model-check] No GPU detected — CPU inference mode"
+fi
+
+# Count available models
+MODEL_COUNT=$(find "${MODEL_DIR}" -name "*.bin" -o -name "*.gguf" 2>/dev/null | wc -l || echo "0")
+echo "[model-check] Models available: ${MODEL_COUNT} in ${MODEL_DIR}"
+echo "[model-check] Ready to start Ollama"

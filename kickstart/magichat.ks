@@ -52,6 +52,71 @@ cronie
 rsync
 tar
 gzip
+unzip
+p7zip
+xz
+bzip2
+tmux
+screen
+htop
+iotop
+sysstat
+git
+jq
+
+# Editors
+nano
+vim-enhanced
+
+# Network tools
+curl
+wget
+bind-utils
+net-tools
+traceroute
+
+# Hardware detection
+lshw
+pciutils
+usbutils
+
+# Document processing (headless — no GUI, used for PDF conversion + rendering)
+libreoffice-headless
+libreoffice-writer
+libreoffice-calc
+libreoffice-impress
+poppler-utils
+
+# Fonts (needed for document + PDF rendering)
+google-noto-sans-fonts
+liberation-fonts-common
+liberation-mono-fonts
+liberation-sans-fonts
+liberation-serif-fonts
+
+# Image processing
+ImageMagick
+
+# Media processing (Familiar voice, video, media, transcription skills)
+ffmpeg
+sox
+mediainfo
+perl-Image-ExifTool
+
+# OCR + document conversion
+ghostscript
+pandoc
+tesseract
+tesseract-langpack-eng
+
+# Hardware monitoring
+smartmontools
+nvme-cli
+lm-sensors
+
+# Crypto + large file support
+gnupg2
+git-lfs
 
 # Security hardening
 audit
@@ -117,7 +182,9 @@ cp /opt/magichat/systemd/reflection.service /etc/systemd/system/
 cp /opt/magichat/systemd/magichat-backup.service /etc/systemd/system/
 cp /opt/magichat/systemd/magichat-backup.timer /etc/systemd/system/
 systemctl daemon-reload
+systemctl enable magichat-ollama.service
 systemctl enable reflection.service
+systemctl enable magichat-wizard.service
 systemctl enable magichat-backup.timer
 
 # ── Firewall ─────────────────────────────────────────────────────────────────
@@ -163,6 +230,64 @@ update-crypto-policies --set FUTURE 2>/dev/null || true
 aide --init 2>/dev/null || true
 cp /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz 2>/dev/null || true
 
+# ── Ollama LLM inference ───────────────────────────────────────────────────
+# Install Ollama binary
+curl -fsSL https://ollama.com/install.sh | OLLAMA_INSTALL_ONLY=1 sh 2>/dev/null || true
+
+# Model storage + Ollama env
+mkdir -p /var/lib/magichat/models
+chown magichat:magichat /var/lib/magichat/models
+cat > /etc/magichat/ollama.env << 'OLLAMAENV'
+OLLAMA_HOST=127.0.0.1:11434
+OLLAMA_MODELS=/var/lib/magichat/models
+OLLAMA_NUM_PARALLEL=4
+OLLAMA_MAX_LOADED_MODELS=2
+OLLAMA_FLASH_ATTENTION=1
+OLLAMA_KEEP_ALIVE=10m
+OLLAMAENV
+
+# Install Ollama service + model check
+cp /opt/magichat/systemd/magichat-ollama.service /etc/systemd/system/
+cp /opt/magichat/scripts/magichat-model-check /usr/local/bin/
+chmod +x /usr/local/bin/magichat-model-check
+
+# Initial providers.env (empty keys — configured by wizard or CLI)
+cat > /etc/magichat/providers.env << 'PROVIDERSENV'
+# Magic Hat — AI Provider Configuration
+# Configure with: magichat providers configure
+# Or use the first-boot wizard at http://<ip>:8080
+
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=claude-sonnet-4-6
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4o
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=llama3.2
+DEFAULT_PROVIDER=auto
+LIGHTWEIGHT_MODEL=
+LIGHTWEIGHT_PROVIDER=
+FAMILIAR_PHI_LOCAL_ONLY=false
+PROVIDERSENV
+chmod 600 /etc/magichat/providers.env
+chown magichat:magichat /etc/magichat/providers.env
+
+# Provider management scripts
+cp /opt/magichat/scripts/provider-health.sh /opt/magichat/scripts/provider-health.sh 2>/dev/null || true
+cp /opt/magichat/scripts/configure-providers.sh /opt/magichat/scripts/configure-providers.sh 2>/dev/null || true
+chmod +x /opt/magichat/scripts/provider-health.sh /opt/magichat/scripts/configure-providers.sh 2>/dev/null || true
+
+# GPU groups for service user
+usermod -aG render magichat 2>/dev/null || true
+usermod -aG video magichat 2>/dev/null || true
+
+# GPU detection + driver install (runs at post-install, best-effort)
+if [[ -f /opt/magichat/scripts/detect-gpu.sh ]]; then
+    chmod +x /opt/magichat/scripts/detect-gpu.sh
+    /opt/magichat/scripts/detect-gpu.sh --install 2>/dev/null || true
+fi
+
 # ── Backup cron ──────────────────────────────────────────────────────────────
 mkdir -p /var/backups/magichat
 chown magichat:magichat /var/backups/magichat
@@ -179,6 +304,10 @@ mkdir -p /opt/magichat
 # /opt/magichat/firewall/   — firewalld zones + fail2ban
 # /opt/magichat/firstboot/  — first-boot wizard
 
+# ── First-boot wizard ─────────────────────────────────────────────────────────
+cp /opt/magichat/firstboot/wizard.py /opt/magichat/firstboot/wizard.py 2>/dev/null || true
+cp /opt/magichat/systemd/magichat-wizard.service /etc/systemd/system/
+
 # ── MOTD ─────────────────────────────────────────────────────────────────────
 cat > /etc/motd << 'MOTD'
 
@@ -186,8 +315,8 @@ cat > /etc/motd << 'MOTD'
   ║           🎩  Magic Hat               ║
   ║     Familiar AI Server Platform       ║
   ║                                       ║
-  ║  Run: magichat status                 ║
-  ║  Admin: https://<your-domain>         ║
+  ║  Setup: http://<ip>:8080               ║
+  ║  CLI:   magichat status               ║
   ╚═══════════════════════════════════════╝
 
 MOTD

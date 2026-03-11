@@ -1,0 +1,55 @@
+# Magic Hat — First-Boot Setup Wizard
+# Copyright (c) 2026 George Scott Foley — MIT License
+#
+# Runs a lightweight web wizard on port 8080 for initial server configuration.
+# Self-disables after the operator completes setup.
+# Only starts if /opt/magichat/.needs-firstboot exists.
+
+[Unit]
+Description=Magic Hat — First-Boot Setup Wizard
+Documentation=https://github.com/omegcrash/magic-hat
+After=network-online.target magichat-ollama.service reflection.service
+Wants=network-online.target
+ConditionPathExists=/opt/magichat/.needs-firstboot
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# Wizard needs root to create admin users, configure Nginx, run certbot
+ExecStart=/usr/bin/python3.11 /opt/magichat/firstboot/wizard.py
+
+# Restart if it crashes during setup
+Restart=on-failure
+RestartSec=3
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+# Security — tighter than a general service but needs system access
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=no
+RestrictRealtime=yes
+LockPersonality=yes
+UMask=0077
+
+# Wizard needs network and filesystem access
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Resource limits — lightweight server
+MemoryMax=128M
+TasksMax=32
+LimitCORE=0
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=magichat-wizard
+
+[Install]
+WantedBy=multi-user.target

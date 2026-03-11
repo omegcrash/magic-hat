@@ -20,6 +20,7 @@ Environment=REFLECTION_HOST=127.0.0.1
 Environment=REFLECTION_PORT=8000
 Environment=REFLECTION_WORKERS=4
 EnvironmentFile=-/etc/magichat/reflection.env
+EnvironmentFile=-/etc/magichat/providers.env
 
 # Exec
 ExecStartPre=/usr/bin/python3.11 -m reflection migrate
