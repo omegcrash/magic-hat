@@ -38,25 +38,54 @@ RestartSec=5
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
-# Security hardening
+# Security hardening — CIS + OWASP Agentic Top 10
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/home/magichat/.familiar /home/magichat/.reflection /var/log/magichat
 PrivateTmp=yes
+PrivateDevices=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
+ProtectKernelLogs=yes
 ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 MemoryDenyWriteExecute=yes
 LockPersonality=yes
+RemoveIPC=yes
+UMask=0077
+
+# System call filtering (OWASP ASI02 — tool sandboxing)
+SystemCallFilter=@system-service
+SystemCallFilter=~@mount @reboot @swap @clock @module @raw-io @debug
+SystemCallArchitectures=native
+SystemCallErrorNumber=EPERM
+
+# seccomp profile
+# SeccompProfile=/etc/magichat/seccomp-reflection.json
+
+# Network isolation — only loopback + outbound (no binding new ports)
+IPAddressAllow=127.0.0.0/8 ::1/128
+RestrictNetworkInterfaces=lo
+
+# Capabilities — drop everything, grant only what's needed
+CapabilityBoundingSet=
+AmbientCapabilities=
 
 # Resource limits
 LimitNOFILE=65536
 LimitNPROC=4096
+LimitCORE=0
 MemoryMax=2G
 CPUQuota=80%
+TasksMax=512
 
 # Logging
 StandardOutput=journal

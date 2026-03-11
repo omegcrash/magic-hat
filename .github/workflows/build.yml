@@ -103,3 +103,39 @@ jobs:
         with:
           scandir: './scripts'
           severity: warning
+
+      - name: Shellcheck security scripts
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './security'
+          severity: warning
+
+      - name: Validate security configs
+        run: |
+          # SSH config — verify critical settings
+          grep -q "PermitRootLogin no" security/sshd_magichat.conf
+          grep -q "PasswordAuthentication no" security/sshd_magichat.conf
+          echo "SSH hardening: OK"
+
+          # Kernel sysctl — verify ASLR
+          grep -q "kernel.randomize_va_space = 2" security/sysctl-hardening.conf
+          echo "Kernel hardening: OK"
+
+          # Audit rules — verify immutable flag
+          grep -q "^-e 2" security/audit.rules
+          echo "Audit rules: OK"
+
+          # seccomp — verify JSON validity
+          python3 -c "import json; json.load(open('security/seccomp-reflection.json'))"
+          echo "seccomp profile: OK"
+
+          # Output filter — verify sections exist
+          grep -q "\[patterns\]" security/output-filter.conf
+          grep -q "\[allowlist\]" security/output-filter.conf
+          echo "Output filter: OK"
+
+          # fail2ban filters — verify definitions
+          for f in firewall/filter.d/*.conf; do
+            grep -q "failregex" "$f"
+            echo "fail2ban filter $(basename $f): OK"
+          done

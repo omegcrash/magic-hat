@@ -176,6 +176,45 @@ cmd_backup() {
     /opt/magichat/scripts/backup.sh
 }
 
+cmd_harden() {
+    _header
+    echo -e "${BOLD}Security Hardening Audit${NC}"
+    echo ""
+    if [[ -f /opt/magichat/security/hardening.sh ]]; then
+        /opt/magichat/security/hardening.sh "${1:-}"
+    else
+        echo -e "  ${RED}Error:${NC} Hardening script not found at /opt/magichat/security/hardening.sh"
+        echo "  Run the installer or download from the repo."
+    fi
+}
+
+cmd_audit_log() {
+    _header
+    echo -e "${BOLD}Security Audit Log${NC}"
+    echo ""
+    echo -e "${BOLD}Recent auth failures:${NC}"
+    journalctl -u sshd --since "24 hours ago" --grep "Failed\|Invalid" --no-pager -q 2>/dev/null | tail -20 || echo "  None"
+    echo ""
+    echo -e "${BOLD}Recent fail2ban actions:${NC}"
+    journalctl -u fail2ban --since "24 hours ago" --no-pager -q 2>/dev/null | grep -i "ban\|unban" | tail -20 || echo "  None"
+    echo ""
+    echo -e "${BOLD}Recent auditd alerts:${NC}"
+    ausearch -ts recent -m avc -m user_auth 2>/dev/null | tail -20 || echo "  None (auditd may not be running)"
+    echo ""
+    echo -e "${BOLD}AIDE file integrity:${NC}"
+    if [[ -f /var/lib/aide/aide.db.gz ]]; then
+        echo "  Database present. Run 'aide --check' for full report."
+        local last_check
+        last_check=$(stat -c %Y /var/lib/aide/aide.db.gz 2>/dev/null)
+        if [[ -n "$last_check" ]]; then
+            echo "  Last baseline: $(date -d "@${last_check}" '+%Y-%m-%d %H:%M')"
+        fi
+    else
+        echo "  No AIDE database. Run 'aide --init' to create baseline."
+    fi
+    echo ""
+}
+
 cmd_help() {
     _header
     echo "Usage: magichat <command>"
@@ -190,6 +229,8 @@ cmd_help() {
     echo "  update    Update OS + Reflection + run migrations"
     echo "  backup    Run database backup now"
     echo "  logs      Follow service logs (default: reflection)"
+    echo "  harden    Run security hardening audit (--apply to fix)"
+    echo "  audit     Show security audit log (24h)"
     echo "  help      Show this help"
     echo ""
 }
@@ -205,6 +246,8 @@ case "${1:-help}" in
     update)   cmd_update ;;
     backup)   cmd_backup ;;
     logs)     cmd_logs "${2:-reflection}" ;;
+    harden)   cmd_harden "${2:-}" ;;
+    audit)    cmd_audit_log ;;
     help|-h|--help) cmd_help ;;
     version|-v|--version) echo "Magic Hat v${VERSION}" ;;
     *)

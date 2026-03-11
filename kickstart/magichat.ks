@@ -53,6 +53,14 @@ rsync
 tar
 gzip
 
+# Security hardening
+audit
+aide
+openssh-server
+policycoreutils-python-utils
+setools-console
+crypto-policies-scripts
+
 # Remove unnecessary packages
 -iwl*firmware*
 -plymouth*
@@ -124,6 +132,36 @@ systemctl enable fail2ban
 sed -i 's/apply_updates = no/apply_updates = yes/' /etc/dnf/automatic.conf
 sed -i 's/upgrade_type = default/upgrade_type = security/' /etc/dnf/automatic.conf
 systemctl enable dnf-automatic.timer
+
+# ── Security hardening ─────────────────────────────────────────────────────
+# SSH hardening
+cp /opt/magichat/security/sshd_magichat.conf /etc/ssh/sshd_config.d/99-magichat.conf
+cp /opt/magichat/security/ssh_banner /etc/ssh/magichat_banner
+
+# Kernel hardening
+cp /opt/magichat/security/sysctl-hardening.conf /etc/sysctl.d/99-magichat.conf
+
+# Audit rules
+cp /opt/magichat/security/audit.rules /etc/audit/rules.d/99-magichat.rules
+systemctl enable auditd
+
+# seccomp profile for Reflection
+mkdir -p /etc/magichat
+cp /opt/magichat/security/seccomp-reflection.json /etc/magichat/seccomp-reflection.json
+cp /opt/magichat/security/output-filter.conf /etc/magichat/output-filter.conf
+
+# fail2ban custom filters
+cp /opt/magichat/firewall/filter.d/*.conf /etc/fail2ban/filter.d/
+
+# Disable core dumps
+echo "* hard core 0" >> /etc/security/limits.conf
+
+# TLS policy — FUTURE crypto policy (strongest available)
+update-crypto-policies --set FUTURE 2>/dev/null || true
+
+# AIDE — file integrity baseline (generated on first boot)
+aide --init 2>/dev/null || true
+cp /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz 2>/dev/null || true
 
 # ── Backup cron ──────────────────────────────────────────────────────────────
 mkdir -p /var/backups/magichat

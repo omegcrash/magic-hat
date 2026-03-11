@@ -32,25 +32,28 @@ if ! grep -qi "fedora" /etc/os-release 2>/dev/null; then
     [[ $REPLY =~ ^[Yy]$ ]] || exit 1
 fi
 
-echo "[1/8] Installing system packages..."
+echo "[1/10] Installing system packages..."
 dnf install -y \
     postgresql-server postgresql-contrib \
     redis nginx certbot python3-certbot-nginx \
     podman podman-compose \
     fail2ban firewalld \
     python3.11 python3.11-pip python3.11-devel \
-    dnf-automatic cronie rsync
+    dnf-automatic cronie rsync \
+    audit aide openssh-server \
+    policycoreutils-python-utils setools-console \
+    crypto-policies-scripts
 
-echo "[2/8] Creating service user..."
+echo "[2/10] Creating service user..."
 if ! id "${MAGICHAT_USER}" &>/dev/null; then
     useradd --system --create-home --shell /bin/bash --comment "Magic Hat service" "${MAGICHAT_USER}"
 fi
 
-echo "[3/8] Installing Reflection..."
+echo "[3/10] Installing Reflection..."
 python3.11 -m pip install --upgrade pip
 python3.11 -m pip install "reflection-agent[full]"
 
-echo "[4/8] Configuring PostgreSQL..."
+echo "[4/10] Configuring PostgreSQL..."
 if [[ ! -f /var/lib/pgsql/data/PG_VERSION ]]; then
     postgresql-setup --initdb
 fi
@@ -65,7 +68,7 @@ su - postgres -c "psql -c \"ALTER USER reflection WITH PASSWORD '${DB_PASSWORD}'
 su - postgres -c "psql -c \"CREATE DATABASE reflection OWNER reflection;\"" 2>/dev/null || true
 su - postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE reflection TO reflection;\""
 
-echo "[5/8] Configuring Redis..."
+echo "[5/10] Configuring Redis..."
 REDIS_PASSWORD=$(python3.11 -c "import secrets; print(secrets.token_urlsafe(32))")
 mkdir -p /etc/redis/redis.conf.d
 cat > /etc/redis/redis.conf.d/magichat.conf << EOF
@@ -79,7 +82,7 @@ save 60 10000
 EOF
 systemctl enable --now redis
 
-echo "[6/8] Installing Magic Hat configs..."
+echo "[6/10] Installing Magic Hat configs..."
 mkdir -p "${MAGICHAT_DIR}"/{scripts,systemd,nginx,firewall,firstboot}
 mkdir -p /etc/magichat
 mkdir -p /var/backups/magichat
@@ -127,7 +130,44 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -out /etc/pki/tls/certs/magichat-selfsigned.pem \
     -subj "/CN=magichat.local" 2>/dev/null
 
-echo "[7/8] Enabling services..."
+echo "[7/10] Applying security hardening..."
+
+# SSH hardening
+curl -fsSL "${REPO_URL}/security/sshd_magichat.conf" -o /etc/ssh/sshd_config.d/99-magichat.conf
+curl -fsSL "${REPO_URL}/security/ssh_banner" -o /etc/ssh/magichat_banner
+systemctl reload sshd 2>/dev/null || true
+
+# Kernel hardening
+curl -fsSL "${REPO_URL}/security/sysctl-hardening.conf" -o /etc/sysctl.d/99-magichat.conf
+sysctl --system >/dev/null 2>&1 || true
+
+# Audit rules
+curl -fsSL "${REPO_URL}/security/audit.rules" -o /etc/audit/rules.d/99-magichat.rules
+systemctl enable auditd
+systemctl start auditd 2>/dev/null || true
+
+# seccomp + output filter
+curl -fsSL "${REPO_URL}/security/seccomp-reflection.json" -o /etc/magichat/seccomp-reflection.json
+curl -fsSL "${REPO_URL}/security/output-filter.conf" -o /etc/magichat/output-filter.conf
+
+# fail2ban custom filters
+mkdir -p /etc/fail2ban/filter.d
+for f in nginx-blocked reflection-api-abuse reflection-auth; do
+    curl -fsSL "${REPO_URL}/firewall/filter.d/${f}.conf" -o "/etc/fail2ban/filter.d/${f}.conf"
+done
+
+# Hardening script for ongoing audits
+curl -fsSL "${REPO_URL}/security/hardening.sh" -o "${MAGICHAT_DIR}/security/hardening.sh"
+mkdir -p "${MAGICHAT_DIR}/security"
+chmod +x "${MAGICHAT_DIR}/security/hardening.sh"
+
+# Disable core dumps
+echo "* hard core 0" >> /etc/security/limits.conf
+
+# TLS crypto policy — FUTURE (strongest)
+update-crypto-policies --set FUTURE 2>/dev/null || true
+
+echo "[8/10] Enabling services..."
 systemctl daemon-reload
 systemctl enable reflection.service
 systemctl enable magichat-backup.timer
@@ -139,10 +179,15 @@ sed -i 's/apply_updates = no/apply_updates = yes/' /etc/dnf/automatic.conf
 sed -i 's/upgrade_type = default/upgrade_type = security/' /etc/dnf/automatic.conf
 systemctl enable dnf-automatic.timer
 
-echo "[8/8] Starting services..."
+echo "[9/10] Starting services..."
 systemctl start reflection.service
 systemctl start nginx
 systemctl start fail2ban
+
+echo "[10/10] Initializing AIDE file integrity database..."
+aide --init 2>/dev/null && \
+    cp /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz 2>/dev/null || \
+    echo "  (AIDE will initialize on next boot)"
 
 echo ""
 echo "========================================="

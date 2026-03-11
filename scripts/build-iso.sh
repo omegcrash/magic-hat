@@ -41,14 +41,19 @@ mkdir -p "${BUILD_DIR}" "${RESULT_DIR}"
 echo "[1/4] Preparing Magic Hat overlay..."
 # Create the /opt/magichat tree that the Kickstart expects
 OVERLAY="${BUILD_DIR}/overlay"
-mkdir -p "${OVERLAY}/opt/magichat"/{scripts,systemd,nginx,firewall,firstboot}
+mkdir -p "${OVERLAY}/opt/magichat"/{scripts,systemd,nginx,firewall,firstboot,security}
+mkdir -p "${OVERLAY}/opt/magichat/firewall/filter.d"
 
 cp "${PROJECT_DIR}/scripts/backup.sh" "${OVERLAY}/opt/magichat/scripts/"
 cp "${PROJECT_DIR}/scripts/magichat" "${OVERLAY}/opt/magichat/scripts/"
 cp "${PROJECT_DIR}/systemd/"* "${OVERLAY}/opt/magichat/systemd/"
 cp "${PROJECT_DIR}/nginx/"* "${OVERLAY}/opt/magichat/nginx/"
-cp "${PROJECT_DIR}/firewall/"* "${OVERLAY}/opt/magichat/firewall/"
+cp "${PROJECT_DIR}/firewall/magichat.xml" "${OVERLAY}/opt/magichat/firewall/"
+cp "${PROJECT_DIR}/firewall/jail.local" "${OVERLAY}/opt/magichat/firewall/"
+cp "${PROJECT_DIR}/firewall/filter.d/"* "${OVERLAY}/opt/magichat/firewall/filter.d/"
+cp "${PROJECT_DIR}/security/"* "${OVERLAY}/opt/magichat/security/"
 chmod +x "${OVERLAY}/opt/magichat/scripts/"*
+chmod +x "${OVERLAY}/opt/magichat/security/hardening.sh"
 
 echo "[2/4] Downloading Fedora Server netinstall..."
 FEDORA_VERSION="41"

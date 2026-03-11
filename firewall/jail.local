@@ -1,37 +1,91 @@
 # Magic Hat — fail2ban Configuration
 # Copyright (c) 2026 George Scott Foley — MIT License
+#
+# Addresses: OWASP ASI01 (goal hijacking via brute-force), CIS benchmarks,
+# AI-specific abuse patterns (rapid API hammering, credential stuffing).
 
 [DEFAULT]
 bantime = 3600
 findtime = 600
 maxretry = 5
 backend = systemd
+banaction = firewallcmd-rich-rules[actiontype=]
+banaction_allports = firewallcmd-rich-rules[actiontype=]
+
+# Recidive multiplier — repeat offenders get exponentially longer bans
+# (see [recidive] jail below)
 
 # Email notifications (optional — configure in /etc/magichat/reflection.env)
 # destemail = admin@example.com
 # sender = fail2ban@magichat.local
 # action = %(action_mwl)s
 
+# ── SSH ───────────────────────────────────────────────────────────────────────
 [sshd]
 enabled = true
 port = ssh
 maxretry = 3
 bantime = 7200
+findtime = 600
 
+# ── Nginx: Auth failures ─────────────────────────────────────────────────────
 [nginx-http-auth]
 enabled = true
 port = http,https
 logpath = /var/log/nginx/error.log
 maxretry = 5
+bantime = 3600
 
+# ── Nginx: Rate limit violations ─────────────────────────────────────────────
 [nginx-limit-req]
 enabled = true
 port = http,https
 logpath = /var/log/nginx/error.log
 maxretry = 10
+bantime = 1800
 
+# ── Nginx: Bot/scanner detection ─────────────────────────────────────────────
 [nginx-botsearch]
 enabled = true
 port = http,https
 logpath = /var/log/nginx/access.log
 maxretry = 2
+bantime = 86400
+
+# ── Nginx: Blocked exploit paths (wp-admin, phpmyadmin, .env, .git) ──────────
+[nginx-blocked]
+enabled = true
+port = http,https
+logpath = /var/log/nginx/blocked.log
+maxretry = 1
+bantime = 86400
+filter = nginx-blocked
+
+# ── API abuse: Rapid fire requests to agent endpoints ─────────────────────────
+# OWASP ASI02 — Tool Misuse via API hammering
+[reflection-api-abuse]
+enabled = true
+port = http,https
+logpath = /var/log/nginx/access.log
+maxretry = 100
+findtime = 60
+bantime = 3600
+filter = reflection-api-abuse
+
+# ── Auth brute force: Login endpoint hammering ────────────────────────────────
+[reflection-auth]
+enabled = true
+port = http,https
+logpath = /var/log/nginx/access.log
+maxretry = 5
+findtime = 300
+bantime = 7200
+filter = reflection-auth
+
+# ── Recidive: Repeat offenders get escalating bans ───────────────────────────
+[recidive]
+enabled = true
+logpath = /var/log/fail2ban.log
+bantime = 604800
+findtime = 86400
+maxretry = 3

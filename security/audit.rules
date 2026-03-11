@@ -1,0 +1,64 @@
+# Magic Hat — Linux Audit Rules
+# Copyright (c) 2026 George Scott Foley — MIT License
+#
+# Deployed to /etc/audit/rules.d/99-magichat.rules
+# Provides immutable audit trail for security-critical events.
+
+# ── Delete all existing rules (clean start) ───────────────────────────────────
+-D
+
+# ── Set buffer and failure mode ───────────────────────────────────────────────
+-b 8192
+-f 1
+
+# ── Self-integrity: audit config changes ──────────────────────────────────────
+-w /etc/audit/ -p wa -k audit_config
+-w /etc/audisp/ -p wa -k audit_config
+
+# ── Authentication events ─────────────────────────────────────────────────────
+-w /etc/pam.d/ -p wa -k auth_config
+-w /etc/ssh/sshd_config -p wa -k ssh_config
+-w /etc/ssh/sshd_config.d/ -p wa -k ssh_config
+-w /var/log/faillog -p wa -k login_failures
+-w /var/log/lastlog -p wa -k login_events
+
+# ── User/group modifications ──────────────────────────────────────────────────
+-w /etc/passwd -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/group -p wa -k identity
+-w /etc/gshadow -p wa -k identity
+-w /usr/sbin/useradd -p x -k user_mgmt
+-w /usr/sbin/userdel -p x -k user_mgmt
+-w /usr/sbin/usermod -p x -k user_mgmt
+
+# ── Magic Hat specific files ──────────────────────────────────────────────────
+-w /etc/magichat/ -p wa -k magichat_config
+-w /opt/magichat/ -p wa -k magichat_files
+-w /home/magichat/.familiar/ -p wa -k familiar_data
+-w /home/magichat/.reflection/ -p wa -k reflection_data
+
+# ── Service management ────────────────────────────────────────────────────────
+-w /etc/systemd/system/reflection.service -p wa -k service_config
+-w /usr/bin/systemctl -p x -k service_mgmt
+
+# ── Network configuration ─────────────────────────────────────────────────────
+-w /etc/nginx/ -p wa -k nginx_config
+-w /etc/firewalld/ -p wa -k firewall_config
+
+# ── SELinux policy changes ────────────────────────────────────────────────────
+-w /etc/selinux/ -p wa -k selinux_config
+-a always,exit -F arch=b64 -S sethostname -S setdomainname -k hostname_change
+
+# ── Privilege escalation ──────────────────────────────────────────────────────
+-a always,exit -F arch=b64 -S execve -F euid=0 -F auid>=1000 -F auid!=-1 -k priv_escalation
+-w /etc/sudoers -p wa -k sudo_config
+-w /etc/sudoers.d/ -p wa -k sudo_config
+
+# ── File deletion by non-root users ──────────────────────────────────────────
+-a always,exit -F arch=b64 -S unlink -S unlinkat -S rename -S renameat -F auid>=1000 -F auid!=-1 -k file_deletion
+
+# ── Kernel module loading ─────────────────────────────────────────────────────
+-a always,exit -F arch=b64 -S init_module -S finit_module -S delete_module -k kernel_modules
+
+# ── Make rules immutable (requires reboot to change) ──────────────────────────
+-e 2

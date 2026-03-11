@@ -16,8 +16,17 @@ RETENTION_WEEKLY=4
 
 echo "[$(date)] Starting backup of database '${DB_NAME}'..."
 
+# Verify backup directory integrity
+if [[ ! -d "${BACKUP_DIR}" ]]; then
+    echo "[$(date)] ERROR: Backup directory missing — recreating"
+    mkdir -p "${BACKUP_DIR}"
+fi
+
 # Dump and compress
 pg_dump -U reflection "${DB_NAME}" | gzip > "${BACKUP_FILE}"
+
+# Set immutable attribute on backup file (append-only protection)
+chattr +i "${BACKUP_FILE}" 2>/dev/null || true
 
 # Encrypt if GPG key is configured
 GPG_RECIPIENT="${MAGICHAT_BACKUP_GPG_KEY:-}"
@@ -36,7 +45,11 @@ echo "[$(date)] Backup complete: ${BACKUP_FILE} (${BACKUP_SIZE})"
 DAILY_COUNT=$(ls -1 "${BACKUP_DIR}"/reflection-*.sql.gz* 2>/dev/null | wc -l)
 if [[ ${DAILY_COUNT} -gt ${RETENTION_DAILY} ]]; then
     REMOVE_COUNT=$((DAILY_COUNT - RETENTION_DAILY))
-    ls -1t "${BACKUP_DIR}"/reflection-*.sql.gz* | tail -n "${REMOVE_COUNT}" | xargs rm -f
+    # Remove immutable flag before deletion, then delete
+    ls -1t "${BACKUP_DIR}"/reflection-*.sql.gz* | tail -n "${REMOVE_COUNT}" | while read -r old_backup; do
+        chattr -i "$old_backup" 2>/dev/null || true
+        rm -f "$old_backup"
+    done
     echo "[$(date)] Rotated ${REMOVE_COUNT} old backup(s)"
 fi
 
@@ -50,7 +63,10 @@ if [[ "${DAY_OF_WEEK}" == "7" ]]; then
     WEEKLY_COUNT=$(ls -1 "${WEEKLY_DIR}"/reflection-*.sql.gz* 2>/dev/null | wc -l)
     if [[ ${WEEKLY_COUNT} -gt ${RETENTION_WEEKLY} ]]; then
         REMOVE_COUNT=$((WEEKLY_COUNT - RETENTION_WEEKLY))
-        ls -1t "${WEEKLY_DIR}"/reflection-*.sql.gz* | tail -n "${REMOVE_COUNT}" | xargs rm -f
+        ls -1t "${WEEKLY_DIR}"/reflection-*.sql.gz* | tail -n "${REMOVE_COUNT}" | while read -r old_backup; do
+            chattr -i "$old_backup" 2>/dev/null || true
+            rm -f "$old_backup"
+        done
     fi
     echo "[$(date)] Weekly backup saved"
 fi
