@@ -524,6 +524,228 @@ cmd_desktop() {
     fi
 }
 
+cmd_profile() {
+    local subcmd="${1:-list}"
+    shift || true
+
+    case "${subcmd}" in
+        list)
+            _header
+            echo "Desktop Profiles"
+            echo ""
+
+            META="/opt/magichat/scripts/profiles/profile-meta.json"
+            SELECTED_FILE="/etc/magichat/selected-profiles"
+            DESIRED_FILE="/etc/magichat/desired-services.conf"
+
+            if [[ ! -f "${META}" ]]; then
+                echo "  profile-meta.json not found at ${META}"
+                exit 1
+            fi
+
+            # Read selected opt-in profiles
+            SELECTED=()
+            if [[ -f "${SELECTED_FILE}" ]]; then
+                mapfile -t SELECTED < "${SELECTED_FILE}"
+            fi
+
+            python3 - "${META}" "${SELECTED_FILE:-}" << 'PYEOF'
+import json, sys, os
+
+meta_path = sys.argv[1]
+selected_path = sys.argv[2] if len(sys.argv) > 2 else ""
+
+meta = json.load(open(meta_path))
+selected = set()
+if selected_path and os.path.exists(selected_path):
+    selected = set(l.strip() for l in open(selected_path) if l.strip())
+
+W = "\033[0m"; G = "\033[32m"; B = "\033[34m"; Y = "\033[33m"; D = "\033[2m"
+
+for key, p in meta.get("profiles", {}).items():
+    always_on = p.get("always_on", False)
+    is_selected = always_on or key in selected
+    status = f"{G}active{W}" if is_selected else f"{D}not installed{W}"
+    lock   = f" {B}[always on]{W}" if always_on else ""
+    icon   = p.get("icon", "")
+    label  = p.get("label", key)
+    tagline = p.get("tagline", "")
+    print(f"  {icon}  {label:<22}{lock}  {status}")
+    print(f"      {D}{tagline}{W}")
+    print()
+PYEOF
+            ;;
+
+        add)
+            local profile="${1:-}"
+            if [[ -z "${profile}" ]]; then
+                echo "Usage: magichat profile add <profile>"
+                echo "Available: creative_studio  gaming  dev_workstation"
+                exit 1
+            fi
+            echo "Adding profile: ${profile}"
+            if [[ ! -x /opt/magichat/scripts/profiles/profile-install.sh ]]; then
+                echo "Error: profile-install.sh not found"
+                exit 1
+            fi
+            /opt/magichat/scripts/profiles/profile-install.sh "${profile}"
+            # Record it
+            mkdir -p /etc/magichat
+            grep -qxF "${profile}" /etc/magichat/selected-profiles 2>/dev/null || \
+                echo "${profile}" >> /etc/magichat/selected-profiles
+            echo "Profile '${profile}' added."
+            ;;
+
+        remove)
+            local profile="${1:-}"
+            if [[ -z "${profile}" ]]; then
+                echo "Usage: magichat profile remove <profile>"
+                exit 1
+            fi
+            # Guard: cannot remove always-on profiles
+            ALWAYS_ON=("ai_companion" "privacy_suite")
+            for ao in "${ALWAYS_ON[@]}"; do
+                if [[ "${profile}" == "${ao}" ]]; then
+                    echo "Error: '${profile}' is always-on and cannot be removed."
+                    exit 1
+                fi
+            done
+
+            echo "Removing profile: ${profile}"
+
+            # Uninstall Flatpaks listed for this profile
+            python3 - "${profile}" /opt/magichat/scripts/profiles/profile-meta.json << 'PYEOF'
+import json, sys, subprocess
+profile_key = sys.argv[1]
+meta = json.load(open(sys.argv[2]))
+flatpaks = meta.get("profiles", {}).get(profile_key, {}).get("flatpaks", [])
+for app in flatpaks:
+    print(f"  Removing Flatpak: {app}")
+    subprocess.run(["flatpak", "uninstall", "--noninteractive", "--system", app],
+                   capture_output=True)
+PYEOF
+
+            # Remove from selected-profiles
+            if [[ -f /etc/magichat/selected-profiles ]]; then
+                sed -i "/^${profile}$/d" /etc/magichat/selected-profiles
+            fi
+            # Remove from desired-services
+            if [[ -f /etc/magichat/desired-services.conf ]]; then
+                python3 -c "
+import json, sys
+meta = json.load(open('/opt/magichat/scripts/profiles/profile-meta.json'))
+svcs = meta.get('profiles', {}).get('${profile}', {}).get('services', [])
+lines = open('/etc/magichat/desired-services.conf').readlines()
+lines = [l for l in lines if l.strip() not in svcs]
+open('/etc/magichat/desired-services.conf', 'w').writelines(lines)
+" 2>/dev/null || true
+            fi
+            echo "Profile '${profile}' removed."
+            ;;
+
+        status)
+            cmd_profile list
+            echo ""
+            echo "System service states:"
+            DESIRED="/etc/magichat/desired-services.conf"
+            if [[ -f "${DESIRED}" ]]; then
+                while IFS= read -r svc; do
+                    [[ -z "${svc}" ]] && continue
+                    # Check via Familiar dashboard API
+                    STATUS=$(curl -sf "http://localhost:5000/api/server/status" 2>/dev/null | \
+                        python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+svc=d.get('services',{}).get('${svc}',{})
+print(svc.get('status','unknown'))
+" 2>/dev/null || echo "unknown")
+                    printf "  %-20s %s\n" "${svc}" "${STATUS}"
+                done < "${DESIRED}"
+            else
+                echo "  No services configured."
+            fi
+            ;;
+
+        *)
+            echo "Usage: magichat profile <list|add|remove|status>"
+            exit 1
+            ;;
+    esac
+}
+
+cmd_applet() {
+    local subcmd="${1:-status}"
+
+    case "${subcmd}" in
+        status)
+            _header
+            echo "Familiar Plasmoid Status"
+            echo ""
+            PLASMOID_DIR="/usr/share/plasma/plasmoids/com.magichat.familiar"
+            if [[ -d "${PLASMOID_DIR}" ]]; then
+                echo "  Installed: ${PLASMOID_DIR}"
+                VERSION=$(python3 -c "
+import json
+m = json.load(open('${PLASMOID_DIR}/metadata.json'))
+print(m['KPlugin']['Version'])
+" 2>/dev/null || echo "unknown")
+                echo "  Version:   ${VERSION}"
+            else
+                echo "  NOT installed (expected at ${PLASMOID_DIR})"
+                echo "  Run: sudo magichat applet install"
+            fi
+
+            # Check if plasmashell sees it
+            echo ""
+            echo "  Plasma session:"
+            if pgrep -x plasmashell > /dev/null 2>&1; then
+                echo "    plasmashell running — applet will load on next login"
+            else
+                echo "    plasmashell not running (server/headless mode)"
+            fi
+            ;;
+
+        install)
+            SRC="/opt/magichat/plasma-applet/familiar-applet"
+            DST="/usr/share/plasma/plasmoids/com.magichat.familiar"
+            if [[ ! -d "${SRC}" ]]; then
+                echo "Error: applet source not found at ${SRC}"
+                exit 1
+            fi
+            echo "Installing Familiar plasmoid…"
+            mkdir -p "${DST}"
+            cp -r "${SRC}/." "${DST}/"
+            kbuildsycoca6 --noincremental 2>/dev/null || \
+                kbuildsycoca5 --noincremental 2>/dev/null || true
+            echo "  Installed → ${DST}"
+            echo "  Log out and back in for the tray icon to appear."
+            ;;
+
+        restart)
+            echo "Restarting Plasma shell…"
+            if pgrep -x plasmashell > /dev/null 2>&1; then
+                # Restart as the active desktop user
+                DESKTOP_USER=$(who | awk '/tty[0-9]|:0/{print $1; exit}')
+                if [[ -n "${DESKTOP_USER}" ]]; then
+                    su - "${DESKTOP_USER}" -c \
+                        "DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u ${DESKTOP_USER})/bus \
+                         kquitapp6 plasmashell 2>/dev/null; sleep 1; plasmashell &"
+                    echo "  Plasma shell restarted for ${DESKTOP_USER}"
+                else
+                    echo "  No active desktop session found."
+                fi
+            else
+                echo "  plasmashell is not running."
+            fi
+            ;;
+
+        *)
+            echo "Usage: magichat applet <status|install|restart>"
+            exit 1
+            ;;
+    esac
+}
+
 cmd_help() {
     _header
     echo "Usage: magichat <command>"
@@ -547,6 +769,13 @@ cmd_help() {
     echo "  providers configure   Set up API keys (Claude, GPT, Gemini)"
     echo "  providers test        Send test prompt to each provider"
     echo "  providers env         Show provider config (keys masked)"
+    echo "  profile list          Show installed and available desktop profiles"
+    echo "  profile add <name>    Install an opt-in profile (creative_studio, gaming, dev_workstation)"
+    echo "  profile remove <name> Remove a profile and uninstall its Flatpaks"
+    echo "  profile status        Show profile + service states"
+    echo "  applet status         Show Familiar plasmoid install status"
+    echo "  applet install        Install plasmoid to /usr/share/plasma/plasmoids/"
+    echo "  applet restart        Restart plasmashell for the active desktop user"
     echo "  desktop enable        Install GNOME desktop environment"
     echo "  desktop disable       Switch to headless server mode"
     echo "  desktop purge         Remove all desktop packages"
@@ -572,6 +801,8 @@ case "${1:-help}" in
     models)   cmd_models "${2:-list}" "${3:-}" ;;
     providers) cmd_providers "${2:-status}" "${@:3}" ;;
     desktop)  cmd_desktop "${2:-status}" ;;
+    profile)  cmd_profile "${2:-list}" "${@:3}" ;;
+    applet)   cmd_applet  "${2:-status}" ;;
     harden)   cmd_harden "${2:-}" ;;
     audit)    cmd_audit_log ;;
     help|-h|--help) cmd_help ;;
