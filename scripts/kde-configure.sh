@@ -200,8 +200,11 @@ PopupPosition=TopRight
 PopupTimeout=8000
 NOTIFYRC
 
-# ── Install look-and-feel package ─────────────────────────────────────────────
-if command -v kpackagetool6 &>/dev/null; then
+# ── Install all Magic Hat themes (delegated to install-themes.sh) ─────────────
+if [[ -x /opt/magichat/scripts/install-themes.sh ]]; then
+    /opt/magichat/scripts/install-themes.sh /opt/magichat/themes
+else
+    # Inline fallback if install-themes.sh is not yet present
     if [[ -d /opt/magichat/themes/plasma/look-and-feel/com.magichat.desktop ]]; then
         kpackagetool6 --global --install \
             /opt/magichat/themes/plasma/look-and-feel/com.magichat.desktop \
@@ -209,14 +212,10 @@ if command -v kpackagetool6 &>/dev/null; then
         kpackagetool6 --global --upgrade \
             /opt/magichat/themes/plasma/look-and-feel/com.magichat.desktop \
             --type Plasma/LookAndFeel 2>/dev/null || true
-        echo "  Look-and-feel package installed"
     fi
-fi
-
-# ── SDDM theme ────────────────────────────────────────────────────────────────
-if [[ -d /opt/magichat/themes/sddm/magichat ]]; then
-    cp -r /opt/magichat/themes/sddm/magichat /usr/share/sddm/themes/ 2>/dev/null || true
-    echo "  SDDM theme installed"
+    if [[ -d /opt/magichat/themes/sddm/magichat ]]; then
+        cp -r /opt/magichat/themes/sddm/magichat /usr/share/sddm/themes/ 2>/dev/null || true
+    fi
 fi
 
 # ── System-wide KDE defaults (XDG config) ─────────────────────────────────────
@@ -227,6 +226,8 @@ kwriteconfig6 --file /etc/xdg/kdeglobals \
     --group KDE --key LookAndFeelPackage com.magichat.desktop 2>/dev/null || true
 kwriteconfig6 --file /etc/xdg/kdeglobals \
     --group Icons --key Theme Papirus-Dark 2>/dev/null || true
+kwriteconfig6 --file /etc/xdg/ksplashrc \
+    --group KSplash --key Theme com.magichat.desktop 2>/dev/null || true
 
 # ── Default browser ───────────────────────────────────────────────────────────
 mkdir -p /etc/xdg/xdg-utils
@@ -260,5 +261,29 @@ cat > /etc/firefox/policies/policies.json << 'FFPOLICIES'
   }
 }
 FFPOLICIES
+
+# ── Desktop wizard: enable as user service for new accounts ───────────────────
+# The magichat-desktop-wizard.service only fires when /etc/magichat/profile.unset exists.
+SKEL_SYSTEMD="${SKEL}/.config/systemd/user"
+mkdir -p "${SKEL_SYSTEMD}/graphical-session.target.wants"
+if [[ -f /opt/magichat/systemd/magichat-desktop-wizard.service ]]; then
+    cp /opt/magichat/systemd/magichat-desktop-wizard.service \
+        "${SKEL_SYSTEMD}/magichat-desktop-wizard.service"
+    ln -sf "../magichat-desktop-wizard.service" \
+        "${SKEL_SYSTEMD}/graphical-session.target.wants/magichat-desktop-wizard.service" \
+        2>/dev/null || true
+    echo "  Desktop wizard: pre-enabled in /etc/skel"
+fi
+
+# ── Briefing timer: pre-enable for new accounts ────────────────────────────────
+TIMERS_WANT="${SKEL_SYSTEMD}/timers.target.wants"
+mkdir -p "${TIMERS_WANT}"
+for UNIT in familiar-briefing.service familiar-briefing.timer; do
+    if [[ -f /opt/magichat/systemd/${UNIT} ]]; then
+        cp /opt/magichat/systemd/${UNIT} "${SKEL_SYSTEMD}/${UNIT}"
+    fi
+done
+ln -sf "../familiar-briefing.timer" "${TIMERS_WANT}/familiar-briefing.timer" 2>/dev/null || true
+echo "  Briefing timer: pre-enabled in /etc/skel"
 
 echo "=== KDE configuration complete ==="

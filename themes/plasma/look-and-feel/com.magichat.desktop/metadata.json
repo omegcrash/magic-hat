@@ -1,0 +1,20 @@
+{
+    "KPackageStructure": "Plasma/LookAndFeel",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "george@omegcrash.com",
+                "Name": "George Scott Foley"
+            }
+        ],
+        "Category": "Look and Feel",
+        "Description": "Magic Hat — Familiar AI Desktop theme. Dark, focused, with a purple-blue accent and the Familiar tray applet pre-pinned.",
+        "Icon": "preferences-desktop-theme",
+        "Id": "com.magichat.desktop",
+        "License": "MIT",
+        "Name": "Magic Hat",
+        "Version": "0.3.0",
+        "Website": "https://github.com/omegcrash/magic-hat"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

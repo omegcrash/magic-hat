@@ -1523,22 +1523,58 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Magic Hat First-Boot Wizard")
+    parser.add_argument(
+        "--mode",
+        choices=["server", "desktop", "auto"],
+        default="auto",
+        help=(
+            "Wizard mode: 'server' (headless web wizard), 'desktop' (desktop ISO "
+            "web fallback), 'auto' (detect from /etc/magichat/desktop.mode). "
+            "The native QML wizard is preferred for desktop; this runs as fallback."
+        ),
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=LISTEN_PORT,
+        help="Port to listen on (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--skip-marker-check",
+        action="store_true",
+        help="Skip the MARKER_FILE existence check (for CI testing)",
+    )
+    args = parser.parse_args()
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
 
+    # Resolve mode
+    effective_mode = args.mode
+    if effective_mode == "auto":
+        effective_mode = "desktop" if DESKTOP_MODE_FILE.exists() else "server"
+    logger.info("Wizard mode: %s", effective_mode)
+
     # Check if first-boot is needed
-    if not MARKER_FILE.exists():
+    if not args.skip_marker_check and not MARKER_FILE.exists():
         logger.info("No first-boot marker found — wizard not needed")
         sys.exit(0)
 
     load_state()
 
-    logger.info("Starting Magic Hat First-Boot Wizard on port %d", LISTEN_PORT)
-    logger.info("Open http://<server-ip>:%d in your browser", LISTEN_PORT)
+    port = args.port
+    logger.info("Starting Magic Hat First-Boot Wizard on port %d", port)
+    if effective_mode == "server":
+        logger.info("Open http://<server-ip>:%d in your browser", port)
+    else:
+        logger.info("Desktop mode — web fallback wizard running on port %d", port)
 
-    server = socketserver.TCPServer((LISTEN_HOST, LISTEN_PORT), WizardHandler)
+    server = socketserver.TCPServer((LISTEN_HOST, port), WizardHandler)
     server.allow_reuse_address = True
 
     try:

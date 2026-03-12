@@ -1,0 +1,37 @@
+# Magic Hat — Native Desktop Setup Wizard (systemd user service)
+# Runs the Kirigami QML wizard on first graphical login.
+# Self-disables by removing /etc/magichat/profile.unset on completion.
+#
+# Install as a user service:
+#   install -m644 this.service ~/.config/systemd/user/
+#   systemctl --user enable magichat-desktop-wizard.service
+#
+# The kickstart %post enables it for all new users via /etc/skel/.config/systemd/user/.
+#
+# Copyright (c) 2026 George Scott Foley — MIT License
+
+[Unit]
+Description=Magic Hat Desktop Setup Wizard
+Documentation=https://github.com/omegcrash/magic-hat
+# Only fire on desktop installs where profile selection is pending
+ConditionPathExists=/etc/magichat/desktop.mode
+ConditionPathExists=/etc/magichat/profile.unset
+# Wait for the graphical session to be ready
+After=graphical-session.target plasma-plasmashell.service
+Requires=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/opt/magichat/scripts/launch-desktop-wizard.sh
+Restart=no
+# Run as the logged-in user (this is a user unit)
+# Environment variables for the graphical session
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-0
+EnvironmentFile=-/run/user/%U/environment
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=magichat-desktop-wizard
+
+[Install]
+WantedBy=graphical-session.target
