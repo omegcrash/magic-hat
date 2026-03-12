@@ -170,7 +170,7 @@ usermod -aG video magichat 2>/dev/null || true
 
 # ── Install Familiar + Reflection ─────────────────────────────────────────────
 python3.11 -m pip install --upgrade pip
-python3.11 -m pip install "familiar-agent>=1.15.32"
+python3.11 -m pip install "familiar-agent>=1.15.33"
 python3.11 -m pip install "reflection-agent[full]>=2.0.54"
 
 # ── Graphical target ──────────────────────────────────────────────────────────
@@ -283,6 +283,24 @@ FAMILIAR_PHI_LOCAL_ONLY=false
 PROVIDERSENV
 chmod 600 /etc/magichat/providers.env
 chown magichat:magichat /etc/magichat/providers.env
+
+# ── Optional profile setup — security_suite and network_ops ──────────────────
+# These profiles are opt-in (not always_on) and are NOT installed during %post.
+# They are installed by magichat-profile-setup.service on first boot when
+# the user selects them in the desktop wizard (ProfilePage.qml).
+# This section just ensures the profile scripts are executable.
+for profile_script in \
+    /opt/magichat/scripts/profiles/security-suite.sh \
+    /opt/magichat/scripts/profiles/network-ops.sh; do
+    [[ -f "${profile_script}" ]] && chmod +x "${profile_script}"
+done
+
+# Create stub env files so the security/network skills can find their config
+# directories even before the user installs the profiles.
+mkdir -p /etc/magichat
+for env_file in wazuh.env crowdsec.env suricata.env netdata.env uptime-kuma.env; do
+    touch "/etc/magichat/${env_file}"
+done
 
 # ── Polkit rules (no root prompts for profile installs) ───────────────────────
 if [[ -d /opt/magichat/security/polkit ]]; then
