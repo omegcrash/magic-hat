@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <radialGradient id="hatGrad" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#9b72cf"/>
+      <stop offset="100%" stop-color="#5c35a0"/>
+    </radialGradient>
+    <radialGradient id="brimGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7c5cb5"/>
+      <stop offset="100%" stop-color="#4a2a88"/>
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Hat brim (ellipse at bottom) -->
+  <ellipse cx="128" cy="188" rx="88" ry="18"
+           fill="url(#brimGrad)" stroke="#3d2070" stroke-width="2"/>
+
+  <!-- Hat body (tall trapezoid) -->
+  <path d="M 68 188 Q 64 130 80 72 Q 96 40 128 36 Q 160 40 176 72 Q 192 130 188 188 Z"
+        fill="url(#hatGrad)" stroke="#3d2070" stroke-width="2"/>
+
+  <!-- Hat band -->
+  <path d="M 72 162 Q 128 170 184 162 L 186 175 Q 128 183 70 175 Z"
+        fill="#3d2070" opacity="0.7"/>
+
+  <!-- Star / sparkle on hat -->
+  <g transform="translate(128, 100)" filter="url(#glow)">
+    <!-- 6-point sparkle -->
+    <polygon points="0,-16 3,-5 14,-5 6,2 9,14 0,8 -9,14 -6,2 -14,-5 -3,-5"
+             fill="#f0c040" stroke="#d4a010" stroke-width="0.5"/>
+  </g>
+
+  <!-- Small stars -->
+  <circle cx="96" cy="80" r="3" fill="#c8a0ff" opacity="0.8"/>
+  <circle cx="158" cy="68" r="2" fill="#c8a0ff" opacity="0.6"/>
+  <circle cx="148" cy="130" r="2" fill="#c8a0ff" opacity="0.5"/>
+  <circle cx="88" cy="140" r="1.5" fill="#c8a0ff" opacity="0.4"/>
+</svg>

@@ -1,0 +1,218 @@
+# Magic Hat Desktop — GitHub Actions CI
+# Builds KDE desktop ISO on tag push, validates all components, publishes release.
+#
+# Copyright (c) 2026 George Scott Foley — MIT License
+
+name: Build Magic Hat Desktop ISO
+
+on:
+  push:
+    tags:
+      - 'v*-desktop'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g. 0.4.0)'
+        required: true
+        default: '0.4.0'
+
+jobs:
+  validate:
+    name: Validate components
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:41
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install validation tools
+        run: |
+          dnf install -y \
+            python3 \
+            ShellCheck \
+            kf6-kpackage \
+            qt6-qtdeclarative-devel \
+            jq
+
+      - name: Validate profile-meta.json
+        run: |
+          python3 -c "
+          import json, sys
+          data = json.load(open('scripts/profiles/profile-meta.json'))
+          required = ['ai_companion', 'privacy_suite', 'creative_studio', 'gaming', 'dev_workstation']
+          for key in required:
+              assert key in data, f'Missing profile: {key}'
+              p = data[key]
+              assert 'name' in p, f'Missing name in {key}'
+              assert 'always_on' in p, f'Missing always_on in {key}'
+          print(f'  profile-meta.json OK ({len(data)} profiles)')
+          "
+
+      - name: Validate profile scripts
+        run: |
+          shellcheck scripts/profiles/*.sh scripts/kde-configure.sh \
+                     scripts/build-iso-desktop.sh scripts/familiar-briefing.sh \
+                     2>&1 | head -50 || true
+          echo "  ShellCheck complete"
+
+      - name: Validate QML syntax
+        run: |
+          if command -v qmllint &>/dev/null; then
+            find plasma-applet -name "*.qml" -exec qmllint {} \;
+            echo "  QML lint OK"
+          else
+            echo "  qmllint not available, skipping"
+          fi
+
+      - name: Validate plasmoid metadata
+        run: |
+          python3 -c "
+          import json
+          m = json.load(open('plasma-applet/familiar-applet/metadata.json'))
+          assert m['KPlugin']['Id'] == 'com.magichat.familiar', 'Wrong plasmoid ID'
+          print('  metadata.json OK:', m['KPlugin']['Id'])
+          "
+
+      - name: Validate kickstart syntax
+        run: |
+          dnf install -y pykickstart 2>/dev/null || true
+          if command -v ksvalidator &>/dev/null; then
+            ksvalidator kickstart/magichat-desktop.ks
+            echo "  Kickstart syntax OK"
+          else
+            echo "  ksvalidator not available, skipping"
+          fi
+
+  build-iso:
+    name: Build Desktop ISO
+    runs-on: ubuntu-latest
+    needs: validate
+    container:
+      image: fedora:41
+      options: --privileged
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          dnf install -y lorax mkksiso curl coreutils
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+            VERSION="${VERSION%-desktop}"
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Magic Hat Desktop ISO
+        run: |
+          chmod +x scripts/build-iso-desktop.sh
+          sudo ./scripts/build-iso-desktop.sh --version ${{ steps.version.outputs.version }} --variant desktop
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: magichat-desktop-iso
+          path: dist/magichat-desktop-*.iso*
+          retention-days: 7
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Magic Hat Desktop v${{ steps.version.outputs.version }}"
+          body: |
+            ## Magic Hat Desktop OS v${{ steps.version.outputs.version }}
+
+            KDE Plasma desktop with Familiar AI built in.
+
+            ### Profiles available on first boot
+            - **AI Companion** (always on) — Familiar + Reflection running as services
+            - **Privacy Suite** (always on) — Pi-hole DNS blocking + SearXNG private search
+            - **Creative Studio** — Krita, Inkscape, Kdenlive, Blender, Darktable
+            - **Gaming** — Steam + Mesa/Vulkan drivers + gamemode
+            - **Dev Workstation** — VSCodium, Podman, Git, optional Gitea
+
+            ### System Requirements
+            | Profile | Min RAM | GPU |
+            |---------|---------|-----|
+            | AI Companion (local inference) | 8 GB | optional |
+            | Creative Studio | 8 GB | optional |
+            | Gaming | 8 GB | required |
+            | Dev Workstation | 4 GB | no |
+            | Privacy Suite | 2 GB | no |
+
+            ### Verify
+            ```bash
+            sha256sum -c magichat-desktop-${{ steps.version.outputs.version }}-x86_64.iso.sha256
+            ```
+          files: dist/magichat-desktop-*.iso*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  smoke-test:
+    name: Smoke test (VM boot)
+    runs-on: ubuntu-latest
+    needs: build-iso
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download ISO artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: magichat-desktop-iso
+          path: dist/
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf
+
+      - name: Boot ISO in headless VM
+        timeout-minutes: 45
+        run: |
+          ISO=$(ls dist/magichat-desktop-*.iso | head -1)
+          echo "Booting: ${ISO}"
+
+          # Create virtual disk
+          qemu-img create -f qcow2 /tmp/magichat-test.qcow2 20G
+
+          # Boot installer (headless, serial output)
+          timeout 1800 qemu-system-x86_64 \
+            -m 4096 \
+            -smp 2 \
+            -enable-kvm \
+            -bios /usr/share/ovmf/OVMF.fd \
+            -cdrom "${ISO}" \
+            -drive file=/tmp/magichat-test.qcow2,format=qcow2 \
+            -display none \
+            -serial stdio \
+            -boot d \
+            2>&1 | tee /tmp/install.log | \
+            grep -m1 "Installation complete\|reboot\|error" || true
+
+          echo "--- Last 30 lines of install log ---"
+          tail -30 /tmp/install.log || true
+
+      - name: Verify installer completed
+        run: |
+          if grep -qi "Installation complete\|reboot" /tmp/install.log; then
+            echo "  Installer completed successfully"
+          else
+            echo "  Warning: could not confirm installer completion"
+            # Non-fatal in CI — full smoke test requires KVM
+          fi

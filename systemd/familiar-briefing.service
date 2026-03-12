@@ -1,0 +1,25 @@
+# Magic Hat — Familiar AI Daily Briefing Service
+# Triggered by familiar-briefing.timer at the user's configured briefing time.
+# Calls the Familiar dashboard API to generate a briefing, then sends a
+# KDE desktop notification so the user sees it in the notification center.
+#
+# Copyright (c) 2026 George Scott Foley — MIT License
+
+[Unit]
+Description=Familiar AI Daily Briefing
+Documentation=https://github.com/omegcrash/magic-hat
+After=reflection.service network.target
+Requires=reflection.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/magichat/scripts/familiar-briefing.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=familiar-briefing
+
+# Run as the desktop user (systemd user service)
+# The timer/service pair is installed per-user via ~/.config/systemd/user/
+
+[Install]
+WantedBy=default.target

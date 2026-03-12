@@ -1,0 +1,24 @@
+# Magic Hat — Familiar AI Daily Briefing Timer
+# Fires familiar-briefing.service at the user's configured briefing time.
+# Default: 08:00 daily. User can change via Familiar Settings → Daily Briefing.
+#
+# The briefing time is read from ~/.familiar/data/proactive.json at service
+# runtime — no need to reload the timer when the time changes.
+#
+# Copyright (c) 2026 George Scott Foley — MIT License
+
+[Unit]
+Description=Familiar AI Daily Briefing Timer
+Documentation=https://github.com/omegcrash/magic-hat
+
+[Timer]
+# Fire at 08:00 local time every day
+OnCalendar=*-*-* 08:00:00
+# Randomise up to 60s to avoid thundering-herd if multiple users
+RandomizedDelaySec=60
+# Catch up if the machine was off at 08:00
+Persistent=true
+Unit=familiar-briefing.service
+
+[Install]
+WantedBy=timers.target

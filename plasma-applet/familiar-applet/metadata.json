@@ -1,0 +1,20 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "george@omegcrash.com",
+                "Name": "George Scott Foley"
+            }
+        ],
+        "Category": "Utilities",
+        "Description": "Familiar AI assistant in your system tray. Click to open the chat panel, check your daily briefing, and manage your AI companion.",
+        "Icon": "familiar",
+        "Id": "com.magichat.familiar",
+        "License": "MIT",
+        "Name": "Familiar AI",
+        "Version": "1.0.0",
+        "Website": "https://github.com/omegcrash/magic-hat"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

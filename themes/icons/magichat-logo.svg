@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 160" width="512" height="160">
+  <defs>
+    <radialGradient id="hatGrad" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#9b72cf"/>
+      <stop offset="100%" stop-color="#5c35a0"/>
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Hat icon (left) -->
+  <g transform="translate(16, 8) scale(0.6)">
+    <ellipse cx="80" cy="128" rx="68" ry="14" fill="#4a2a88" stroke="#3d2070" stroke-width="2"/>
+    <path d="M 32 128 Q 28 88 40 50 Q 56 24 80 20 Q 104 24 120 50 Q 132 88 128 128 Z"
+          fill="url(#hatGrad)" stroke="#3d2070" stroke-width="2"/>
+    <path d="M 36 112 Q 80 120 124 112 L 126 122 Q 80 130 34 122 Z"
+          fill="#3d2070" opacity="0.7"/>
+    <g transform="translate(80, 68)" filter="url(#glow)">
+      <polygon points="0,-12 2.5,-4 10,-4 4.5,1.5 7,10 0,6 -7,10 -4.5,1.5 -10,-4 -2.5,-4"
+               fill="#f0c040" stroke="#d4a010" stroke-width="0.5"/>
+    </g>
+    <circle cx="56" cy="54" r="2.5" fill="#c8a0ff" opacity="0.8"/>
+    <circle cx="104" cy="44" r="1.5" fill="#c8a0ff" opacity="0.6"/>
+  </g>
+
+  <!-- "Magic Hat" wordmark -->
+  <text x="112" y="76"
+        font-family="Noto Sans, sans-serif"
+        font-size="52"
+        font-weight="600"
+        fill="#eaeaea"
+        letter-spacing="-1">Magic Hat</text>
+
+  <!-- Tagline -->
+  <text x="113" y="108"
+        font-family="Noto Sans, sans-serif"
+        font-size="18"
+        fill="#7c8cf8"
+        letter-spacing="2">FAMILIAR AI DESKTOP</text>
+</svg>

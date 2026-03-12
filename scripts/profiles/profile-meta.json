@@ -1,0 +1,79 @@
+{
+  "_comment": "Magic Hat Desktop Profile Catalogue — single source of truth for all profile stacks",
+  "_version": "1.0.0",
+  "profiles": {
+    "ai_companion": {
+      "id": "ai_companion",
+      "label": "AI Companion",
+      "tagline": "Familiar AI assistant, always-on briefings, privacy-first",
+      "icon": "🤖",
+      "always_on": true,
+      "script": null,
+      "description": "Core AI layer. Installs Familiar dashboard, configures Ollama for local inference, sets up daily 8 AM briefings, activates the Familiar tray applet. Cannot be deselected.",
+      "flatpaks": [],
+      "services": ["ollama", "familiar"],
+      "job_classes": ["helper", "social_worker", "business_buddy", "nonprofit_director", "chef", "artist"]
+    },
+    "privacy_suite": {
+      "id": "privacy_suite",
+      "label": "Privacy Suite",
+      "tagline": "Pi-hole ad blocking, SearXNG search, encrypted storage",
+      "icon": "🔒",
+      "always_on": true,
+      "script": "privacy-suite.sh",
+      "description": "Network-level ad and tracker blocking via Pi-hole. Private self-hosted search via SearXNG. Firewall hardening and encrypted home directory option. Cannot be deselected.",
+      "flatpaks": [],
+      "services": ["pihole", "searxng"],
+      "job_classes": []
+    },
+    "creative_studio": {
+      "id": "creative_studio",
+      "label": "Creative Studio",
+      "tagline": "GIMP, Inkscape, Krita, Blender, Kdenlive",
+      "icon": "🎨",
+      "always_on": false,
+      "script": "creative-studio.sh",
+      "description": "Professional creative tools. GIMP and Krita for raster art, Inkscape for vector, Blender for 3D, Kdenlive for video editing. Installs Jellyfin for media management. Best for the Artist job class.",
+      "flatpaks": [
+        "org.gimp.GIMP",
+        "org.kde.krita",
+        "org.inkscape.Inkscape",
+        "org.blender.Blender",
+        "org.kde.kdenlive"
+      ],
+      "services": ["jellyfin"],
+      "job_classes": ["artist"]
+    },
+    "gaming": {
+      "id": "gaming",
+      "label": "Gaming",
+      "tagline": "Steam, Lutris, Proton, MangoHud",
+      "icon": "🎮",
+      "always_on": false,
+      "script": "gaming.sh",
+      "description": "Full gaming stack. Steam via Flatpak, Lutris for GOG/Epic/emulation, MangoHud performance overlay. Installs GPU drivers if not already present. Enables 32-bit Mesa libs for Proton.",
+      "flatpaks": [
+        "com.valvesoftware.Steam",
+        "net.lutris.Lutris",
+        "org.freedesktop.Platform.VulkanLayer.MangoHud"
+      ],
+      "services": [],
+      "job_classes": []
+    },
+    "dev_workstation": {
+      "id": "dev_workstation",
+      "label": "Dev Workstation",
+      "tagline": "VS Code, Docker, Git tools, language runtimes",
+      "icon": "💻",
+      "always_on": false,
+      "script": "dev-workstation.sh",
+      "description": "Developer stack. VS Code (Flatpak), Docker Desktop, Gitea for self-hosted Git. Installs Python/Node/Go/Rust toolchains. Enables dev-friendly kernel settings. Best for daily coding work.",
+      "flatpaks": [
+        "com.visualstudio.code",
+        "io.podman_desktop.PodmanDesktop"
+      ],
+      "services": ["gitea"],
+      "job_classes": []
+    }
+  }
+}

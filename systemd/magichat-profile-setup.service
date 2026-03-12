@@ -1,0 +1,37 @@
+# Magic Hat — One-shot profile setup service
+# Runs once at first login after desktop installation.
+# Triggers when /etc/magichat/profile.unset exists.
+# The wizard.py completes the interactive portion; this service handles
+# any post-wizard package/service installation in the background.
+#
+# Copyright (c) 2026 George Scott Foley — MIT License
+
+[Unit]
+Description=Magic Hat Profile Setup
+Documentation=https://github.com/omegcrash/magic-hat
+# Only run if the profile has not been selected yet
+ConditionPathExists=/etc/magichat/profile.unset
+After=network-online.target graphical.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/magichat/scripts/profiles/profile-install.sh
+# Profile keys to install are written to /etc/magichat/selected-profiles
+# by wizard.py before enabling this service
+ExecStart=/bin/bash -c '\
+    if [[ -f /etc/magichat/selected-profiles ]]; then \
+        mapfile -t PROFILES < /etc/magichat/selected-profiles; \
+        /opt/magichat/scripts/profiles/profile-install.sh "${PROFILES[@]}"; \
+    fi'
+ExecStartPost=/bin/rm -f /etc/magichat/profile.unset
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=magichat-profile-setup
+
+# Run as root (needs dnf, flatpak system-wide)
+User=root
+
+[Install]
+WantedBy=graphical.target

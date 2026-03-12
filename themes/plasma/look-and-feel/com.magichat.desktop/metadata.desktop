@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Magic Hat
+Comment=Magic Hat — Familiar AI Desktop
+X-KDE-PluginInfo-Name=com.magichat.desktop
+X-KDE-PluginInfo-Version=0.3.0
+X-KDE-PluginInfo-Author=George Scott Foley
+X-KDE-PluginInfo-Email=george@omegcrash.com
+X-KDE-PluginInfo-Website=https://github.com/omegcrash/magic-hat
+X-KDE-PluginInfo-Category=Look and Feel
+X-KDE-PluginInfo-License=MIT
+X-Plasma-API=5.0

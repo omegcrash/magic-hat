@@ -1,0 +1,30 @@
+// Magic Hat — Polkit rules for desktop setup
+// Allows the magichat-profile-setup service to install Flatpaks
+// and run the profile scripts without prompting for a password.
+//
+// Copyright (c) 2026 George Scott Foley — MIT License
+
+polkit.addRule(function(action, subject) {
+    // Allow magichat system user to manage Flatpak system-wide
+    if (action.id == "org.freedesktop.Flatpak.install-bundle" ||
+        action.id == "org.freedesktop.Flatpak.install-bundle-ref" ||
+        action.id == "org.freedesktop.Flatpak.update-remote-repo" ||
+        action.id == "org.freedesktop.Flatpak.modify-repo") {
+        if (subject.user == "root" ||
+            subject.isInGroup("wheel")) {
+            return polkit.Result.YES;
+        }
+    }
+
+    // Allow the first-time setup wizard to write /etc/magichat
+    if (action.id == "org.freedesktop.policykit.exec") {
+        var command = action.lookup("command_line");
+        if (command && command.indexOf("/opt/magichat/") === 0) {
+            if (subject.isInGroup("wheel")) {
+                return polkit.Result.YES;
+            }
+        }
+    }
+
+    return null;  // fall through to default rules
+});

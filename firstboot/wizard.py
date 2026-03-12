@@ -39,6 +39,10 @@ STATE_FILE = Path("/opt/magichat/.wizard-state.json")
 ENV_FILE = Path("/etc/magichat/reflection.env")
 OLLAMA_URL = "http://127.0.0.1:11434"
 BRIDGE_DIR = Path("/opt/magichat/lib")
+DESKTOP_MODE_FILE = Path("/etc/magichat/desktop.mode")
+PROFILE_UNSET_FILE = Path("/etc/magichat/profile.unset")
+SELECTED_PROFILES_FILE = Path("/etc/magichat/selected-profiles")
+PROFILE_META_FILE = Path("/opt/magichat/scripts/profiles/profile-meta.json")
 
 logger = logging.getLogger("magichat.wizard")
 
@@ -56,6 +60,35 @@ wizard_state: dict[str, Any] = {
     "tls_configured": False,
     "complete": False,
 }
+
+
+def is_desktop_mode() -> bool:
+    """Return True if this is a desktop installation."""
+    return DESKTOP_MODE_FILE.exists()
+
+
+def load_profile_meta() -> dict:
+    """Load profile catalogue from profile-meta.json."""
+    if PROFILE_META_FILE.exists():
+        try:
+            return json.loads(PROFILE_META_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    # Minimal inline fallback
+    return {
+        "profiles": {
+            "ai_companion": {"id": "ai_companion", "label": "AI Companion", "icon": "🤖",
+                             "tagline": "Familiar AI assistant, always-on briefings", "always_on": True},
+            "privacy_suite": {"id": "privacy_suite", "label": "Privacy Suite", "icon": "🔒",
+                              "tagline": "Pi-hole ad blocking, SearXNG search", "always_on": True},
+            "creative_studio": {"id": "creative_studio", "label": "Creative Studio", "icon": "🎨",
+                                "tagline": "GIMP, Inkscape, Krita, Blender, Kdenlive", "always_on": False},
+            "gaming": {"id": "gaming", "label": "Gaming", "icon": "🎮",
+                       "tagline": "Steam, Lutris, Proton, MangoHud", "always_on": False},
+            "dev_workstation": {"id": "dev_workstation", "label": "Dev Workstation", "icon": "💻",
+                                "tagline": "VS Code, Docker, Git tools, language runtimes", "always_on": False},
+        }
+    }
 
 
 def save_state() -> None:
@@ -758,6 +791,70 @@ input:focus {{ outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(
 </html>"""
 
 
+def page_profiles() -> str:
+    """Step 0 — Desktop profile selection (desktop mode only)."""
+    meta = load_profile_meta()
+    profiles = meta.get("profiles", {})
+    selected = wizard_state.get("selected_profiles", [])
+
+    cards_html = ""
+    for profile_id, profile in profiles.items():
+        always_on = profile.get("always_on", False)
+        is_selected = always_on or profile_id in selected
+        checked = "checked" if is_selected else ""
+        disabled = "disabled" if always_on else ""
+        lock_badge = ' <span style="font-size:0.7rem;color:#7c8cf8;vertical-align:middle">Always On</span>' if always_on else ""
+        card_cls = "profile-card selected" if is_selected else "profile-card"
+        icon = html.escape(profile.get("icon", ""))
+        label = html.escape(profile.get("label", profile_id))
+        tagline = html.escape(profile.get("tagline", ""))
+        cards_html += f"""
+<label class="{card_cls}" for="prof_{profile_id}">
+    <input type="checkbox" id="prof_{profile_id}" name="profiles" value="{profile_id}"
+           {checked} {disabled} onchange="toggleCard(this)">
+    <span class="prof-icon">{icon}</span>
+    <span class="prof-label">{label}{lock_badge}</span>
+    <span class="prof-tagline">{tagline}</span>
+</label>"""
+
+    return render_page(f"""
+<div class="card" style="max-width:560px">
+    <h2>Choose Your Setup</h2>
+    <p style="color:#9ca3af;margin-bottom:1.5rem">
+        AI Companion and Privacy Suite are always included.
+        Add optional profiles — you can change these later.
+    </p>
+    <form method="post" action="/api/profiles">
+        <div class="profile-grid">
+            {cards_html}
+        </div>
+        <div class="actions" style="margin-top:2rem">
+            <button type="submit" class="btn btn-primary">Continue →</button>
+        </div>
+    </form>
+</div>
+<style>
+.profile-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
+.profile-card {{
+    display:flex; flex-direction:column; align-items:center; text-align:center;
+    padding:16px 12px; border-radius:10px; border:1px solid #2e3050;
+    background:#1e2030; cursor:pointer; transition:border-color 0.15s,background 0.15s;
+    user-select:none;
+}}
+.profile-card input[type=checkbox] {{ display:none; }}
+.profile-card.selected {{ border-color:#7c8cf8; background:#252745; }}
+.profile-card:hover:not([style*="cursor:default"]) {{ border-color:#5a6adc; }}
+.prof-icon {{ font-size:2rem; margin-bottom:6px; }}
+.prof-label {{ font-weight:600; color:#eaeaea; font-size:0.95rem; }}
+.prof-tagline {{ color:#6b7280; font-size:0.78rem; margin-top:4px; line-height:1.3; }}
+</style>
+<script>
+function toggleCard(cb) {{
+    cb.closest('.profile-card').classList.toggle('selected', cb.checked);
+}}
+</script>""", step=0)
+
+
 def page_welcome() -> str:
     hostname = os.uname().nodename
     return render_page(f"""
@@ -1237,7 +1334,17 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
 
         if path == "/" or path == "/step/1":
+            # Desktop mode: redirect to profile selection first
+            if is_desktop_mode() and PROFILE_UNSET_FILE.exists() and not wizard_state.get("profiles_selected"):
+                self._redirect("/step/0")
+                return
             self._respond(200, page_welcome())
+        elif path == "/step/0":
+            # Desktop profile selection (no-op on server installs)
+            if is_desktop_mode():
+                self._respond(200, page_profiles())
+            else:
+                self._redirect("/step/1")
         elif path == "/step/2":
             self._respond(200, page_admin())
         elif path == "/step/3":
@@ -1271,7 +1378,24 @@ class WizardHandler(http.server.BaseHTTPRequestHandler):
         path = self.path
         form = self._read_form()
 
-        if path == "/api/admin":
+        if path == "/api/profiles":
+            # Collect selected opt-in profiles (always-on are implicit)
+            raw = form.get("profiles", "")
+            selected = [p.strip() for p in (raw if isinstance(raw, list) else [raw]) if p.strip()]
+
+            # Write to /etc/magichat/selected-profiles (one key per line)
+            try:
+                SELECTED_PROFILES_FILE.parent.mkdir(parents=True, exist_ok=True)
+                SELECTED_PROFILES_FILE.write_text("\n".join(selected) + "\n")
+            except OSError:
+                pass
+
+            wizard_state["selected_profiles"] = selected
+            wizard_state["profiles_selected"] = True
+            save_state()
+            self._redirect("/step/1")
+
+        elif path == "/api/admin":
             email = form.get("email", "").strip()
             password = form.get("password", "")
             if not email or not password:
