@@ -8,6 +8,7 @@ import QtQuick.Layouts 1.15
 import org.kde.plasma.plasmoid 2.0
 import org.kde.plasma.core 2.0 as PlasmaCore
 import org.kde.plasma.components 3.0 as PlasmaComponents
+import "code/main.js" as FamiliarJS
 
 PlasmoidItem {
     id: root
@@ -19,8 +20,10 @@ PlasmoidItem {
     // ── State ─────────────────────────────────────────────────────────────────
     property bool overlayOpen: false
     property int unreadCount: 0
-    property string statusText: ""
+    property string agentName: "Familiar"
     property bool agentOnline: false
+    property bool pihole: false
+    property var services: []
 
     // ── Compact representation (tray icon) ────────────────────────────────────
     compactRepresentation: Item {
@@ -33,17 +36,16 @@ PlasmoidItem {
             anchors.centerIn: parent
             width: PlasmaCore.Units.iconSizes.medium
             height: PlasmaCore.Units.iconSizes.medium
-            source: root.agentOnline ? "familiar" : "familiar-offline"
+            source: "familiar"
             active: trayMouse.containsMouse
             opacity: root.agentOnline ? 1.0 : 0.5
         }
 
-        // Unread badge
+        // Unread message badge
         Rectangle {
             visible: root.unreadCount > 0
             anchors { top: icon.top; right: icon.right; topMargin: -2; rightMargin: -2 }
-            width: 14; height: 14
-            radius: 7
+            width: 14; height: 14; radius: 7
             color: "#ef4444"
             PlasmaComponents.Label {
                 anchors.centerIn: parent
@@ -53,17 +55,37 @@ PlasmoidItem {
             }
         }
 
+        // Privacy Mode indicator dot
+        Rectangle {
+            visible: root.pihole
+            anchors { bottom: icon.bottom; right: icon.right; bottomMargin: -1; rightMargin: -1 }
+            width: 8; height: 8; radius: 4
+            color: "#22c55e"
+            border.color: "#1e2030"
+            border.width: 1
+        }
+
         MouseArea {
             id: trayMouse
             anchors.fill: parent
             hoverEnabled: true
-            onClicked: root.overlayOpen = !root.overlayOpen
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onClicked: {
+                if (mouse.button === Qt.LeftButton)
+                    root.overlayOpen = !root.overlayOpen
+            }
+            ToolTip.visible: containsMouse
+            ToolTip.text: root.agentOnline
+                ? (root.pihole ? root.agentName + " · Privacy On" : root.agentName)
+                : "Familiar — not connected"
         }
     }
 
-    // ── Full representation (chat overlay) ────────────────────────────────────
+    // ── Full representation (chat + services overlay) ─────────────────────────
     fullRepresentation: Overlay {
         dashboardUrl: root.dashboardUrl
+        pihole: root.pihole
+        services: root.services
         onCloseRequested: root.overlayOpen = false
     }
 
@@ -72,27 +94,18 @@ PlasmoidItem {
         interval: root.pollIntervalSeconds * 1000
         running: true
         repeat: true
-        onTriggered: root.pollStatus()
+        onTriggered: pollStatus()
     }
 
-    Component.onCompleted: root.pollStatus()
+    Component.onCompleted: pollStatus()
 
     function pollStatus() {
-        var xhr = new XMLHttpRequest()
-        xhr.open("GET", root.dashboardUrl + "/api/status")
-        xhr.timeout = 5000
-        xhr.onreadystatechange = function() {
-            if (xhr.readyState === XMLHttpRequest.DONE) {
-                root.agentOnline = (xhr.status === 200)
-                if (xhr.status === 200) {
-                    try {
-                        var data = JSON.parse(xhr.responseText)
-                        root.unreadCount = data.unread_messages || 0
-                        root.statusText = data.agent_name || "Familiar"
-                    } catch (e) {}
-                }
-            }
-        }
-        xhr.send()
+        FamiliarJS.pollAll(root.dashboardUrl, function(result) {
+            root.agentOnline = result.online
+            root.unreadCount = result.unread
+            root.agentName   = result.agentName
+            root.pihole      = result.pihole
+            root.services    = result.services
+        })
     }
 }
