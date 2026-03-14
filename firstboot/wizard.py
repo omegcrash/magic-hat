@@ -346,99 +346,30 @@ def _get_service_specs() -> dict:
     return {}
 
 
-def provision_services(job_class: str) -> list[dict]:
-    """Provision recommended services for a job class via Podman.
+def _provision_via_service_manager(service_keys: list[str]) -> list[dict]:
+    """Provision services via Familiar's ServiceManager.
 
-    Reads service specs from the Familiar bridge so new services added to
-    Familiar are automatically available without wizard changes.
+    Delegates to the provision-services.py script which uses
+    Familiar's ServiceManager with full hardened specs (capabilities,
+    security settings, volume mounts, health checks).
 
-    Returns a list of {service, status, message} dicts.
+    Falls back to the bridge-based specs if ServiceManager is unavailable.
     """
-    job_classes = _get_job_classes()
-    jc = job_classes.get(job_class)
-    if not jc:
-        return []
+    provision_script = Path("/opt/magichat/scripts/provision-services.py")
 
-    service_specs = _get_service_specs()
-
-    # Detect container runtime
-    runtime = None
-    for rt in ("podman", "docker"):
-        if shutil.which(rt):
-            runtime = rt
-            break
-    if not runtime:
-        return [{"service": "all", "status": "skipped",
-                 "message": "No container runtime (podman/docker) found"}]
-
-    results = []
-    for svc_key in jc.services:
-        spec = service_specs.get(svc_key)
-        if not spec:
-            continue
-
-        # Native services (email_server, rendezvous) run inside Reflection
-        if spec.service_type == "native":
-            results.append({"service": spec.display_name, "status": "ok",
-                            "message": "Built-in (runs inside Reflection)"})
-            continue
-
-        container_name = f"magichat-{svc_key}"
-        volume_dir = f"/home/magichat/.familiar/services/{svc_key}"
-
+    if provision_script.exists():
+        # Delegate to the provisioner script (uses Familiar's ServiceManager)
         try:
-            # Check if already running
-            check = subprocess.run(
-                [runtime, "ps", "-a", "--filter", f"name={container_name}",
-                 "--format", "{{.Status}}"],
-                capture_output=True, text=True, timeout=10)
-            if check.stdout.strip():
-                results.append({"service": spec.display_name, "status": "ok",
-                                "message": "Already provisioned"})
-                continue
+            result = subprocess.run(
+                ["python3", str(provision_script), "--json"] + service_keys,
+                capture_output=True, text=True, timeout=600)
+            if result.returncode == 0 and result.stdout.strip():
+                import json as _json
+                return _json.loads(result.stdout)
+        except (subprocess.TimeoutExpired, OSError, ValueError):
+            pass
 
-            # Create volume directory
-            os.makedirs(volume_dir, exist_ok=True)
-
-            # Pull image
-            subprocess.run([runtime, "pull", spec.image],
-                           capture_output=True, timeout=300)
-
-            # Build run command from spec
-            run_args = [
-                runtime, "run", "-d",
-                "--name", container_name,
-                "--restart", "unless-stopped",
-                "-v", f"{volume_dir}:/data",
-            ]
-
-            # Add port mappings from spec (bind to localhost only)
-            for host_port, container_port in spec.ports.items():
-                run_args.extend(["-p", f"127.0.0.1:{host_port}:{container_port}"])
-
-            # Add env vars from spec
-            for env_key, env_val in spec.env_vars.items():
-                run_args.extend(["-e", f"{env_key}={env_val}"])
-
-            run_args.append(spec.image)
-            result = subprocess.run(run_args, capture_output=True, text=True, timeout=60)
-
-            first_port = next(iter(spec.ports), "?")
-            if result.returncode == 0:
-                results.append({"service": spec.display_name, "status": "ok",
-                                "message": f"Running on port {first_port}"})
-            else:
-                results.append({"service": spec.display_name, "status": "error",
-                                "message": result.stderr.strip()[:120]})
-        except (subprocess.TimeoutExpired, OSError) as e:
-            results.append({"service": spec.display_name, "status": "error",
-                            "message": str(e)[:120]})
-
-    return results
-
-
-def provision_services_general() -> list[dict]:
-    """Provision the essentials for a General Assistant (email + joplin)."""
+    # Fallback: minimal provisioning via bridge specs (no hardening)
     service_specs = _get_service_specs()
     runtime = None
     for rt in ("podman", "docker"):
@@ -450,7 +381,7 @@ def provision_services_general() -> list[dict]:
                  "message": "No container runtime (podman/docker) found"}]
 
     results = []
-    for svc_key in ("email_server", "joplin"):
+    for svc_key in service_keys:
         spec = service_specs.get(svc_key)
         if not spec:
             continue
@@ -498,6 +429,41 @@ def provision_services_general() -> list[dict]:
     return results
 
 
+def provision_services(job_class: str) -> list[dict]:
+    """Provision recommended services for a job class.
+
+    Delegates to Familiar's ServiceManager which handles hardened container
+    specs (capabilities, security settings, volume mounts, health checks).
+
+    Returns a list of {service, status, message} dicts.
+    """
+    job_classes = _get_job_classes()
+    jc = job_classes.get(job_class)
+    if not jc:
+        return []
+
+    # Also record to desired-services.conf for profile consistency
+    try:
+        conf = Path("/etc/magichat/desired-services.conf")
+        conf.parent.mkdir(parents=True, exist_ok=True)
+        existing = set()
+        if conf.exists():
+            existing = {l.strip() for l in conf.read_text().splitlines() if l.strip()}
+        with conf.open("a") as f:
+            for svc_key in jc.services:
+                if svc_key not in existing:
+                    f.write(f"{svc_key}\n")
+    except OSError:
+        pass
+
+    return _provision_via_service_manager(list(jc.services))
+
+
+def provision_services_general() -> list[dict]:
+    """Provision the essentials for a General Assistant (email + joplin)."""
+    return _provision_via_service_manager(["email_server", "joplin"])
+
+
 def _generate_custom_job_class(description: str) -> str:
     """Generate a custom job class JSON package via Ollama, then install it.
 
@@ -518,7 +484,7 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
         "author": "Magic Hat Wizard",
         "description": "One sentence description",
         "requires_skills": [],
-        "familiar_version": ">=1.15.32"
+        "familiar_version": ">=1.15.35"
     }},
     "job_class": {{
         "key": "same_as_metadata_id",
