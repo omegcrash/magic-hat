@@ -746,6 +746,56 @@ print(m['KPlugin']['Version'])
     esac
 }
 
+cmd_services() {
+    _header
+    echo -e "${BOLD}Container Services${NC}"
+    echo ""
+
+    PROVISION_SCRIPT="/opt/magichat/scripts/provision-services.py"
+
+    case "${1:-status}" in
+        status)
+            if [[ -f "${PROVISION_SCRIPT}" ]]; then
+                python3 "${PROVISION_SCRIPT}" --status
+            else
+                echo -e "  ${RED}Error:${NC} provision-services.py not found"
+            fi
+            ;;
+        provision)
+            if [[ ! -f "${PROVISION_SCRIPT}" ]]; then
+                echo -e "  ${RED}Error:${NC} provision-services.py not found"
+                return 1
+            fi
+            shift || true
+            if [[ $# -gt 0 ]]; then
+                echo "  Provisioning: $*"
+                python3 "${PROVISION_SCRIPT}" "$@"
+            else
+                echo "  Provisioning all desired services..."
+                python3 "${PROVISION_SCRIPT}"
+            fi
+            ;;
+        list)
+            echo "  Available service specs:"
+            echo ""
+            python3 -c "
+from familiar.services.specs import SERVICE_SPECS
+for key, spec in sorted(SERVICE_SPECS.items()):
+    stype = spec.service_type.value
+    print(f'  {key:<20s} {spec.display_name:<22s} ({stype})')
+" 2>/dev/null || echo "  Could not load service specs"
+            ;;
+        *)
+            echo "  Usage: magichat services <status|provision|list> [service_keys...]"
+            echo ""
+            echo "  status              Show managed container status"
+            echo "  provision [keys]    Provision services (all from desired-services.conf, or specific keys)"
+            echo "  list                Show all available service specs"
+            ;;
+    esac
+    echo ""
+}
+
 cmd_help() {
     _header
     echo "Usage: magichat <command>"
@@ -769,6 +819,9 @@ cmd_help() {
     echo "  providers configure   Set up API keys (Claude, GPT, Gemini)"
     echo "  providers test        Send test prompt to each provider"
     echo "  providers env         Show provider config (keys masked)"
+    echo "  services status       Show managed container status"
+    echo "  services provision    Provision services (desired-services.conf or specific keys)"
+    echo "  services list         Show all available service specs"
     echo "  profile list          Show installed and available desktop profiles"
     echo "  profile add <name>    Install an opt-in profile (creative_studio, gaming, dev_workstation)"
     echo "  profile remove <name> Remove a profile and uninstall its Flatpaks"
@@ -801,6 +854,7 @@ case "${1:-help}" in
     models)   cmd_models "${2:-list}" "${3:-}" ;;
     providers) cmd_providers "${2:-status}" "${@:3}" ;;
     desktop)  cmd_desktop "${2:-status}" ;;
+    services) cmd_services "${2:-status}" "${@:3}" ;;
     profile)  cmd_profile "${2:-list}" "${@:3}" ;;
     applet)   cmd_applet  "${2:-status}" ;;
     harden)   cmd_harden "${2:-}" ;;

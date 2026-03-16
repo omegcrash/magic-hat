@@ -69,4 +69,14 @@ print(profile.get('script') or 'NO_SCRIPT')
     echo "  Done: ${PROFILE_KEY}"
 done
 
+# ── Provision all recorded services via Familiar's ServiceManager ────────────
+echo "--- Provisioning desired services ---"
+PROVISION_SCRIPT="${SCRIPT_DIR}/../provision-services.py"
+if [[ -f "${PROVISION_SCRIPT}" ]]; then
+    python3 "${PROVISION_SCRIPT}" || echo "  WARNING: Some services failed to provision"
+else
+    echo "  WARNING: provision-services.py not found — services recorded but not started"
+    echo "  Run: magichat services provision"
+fi
+
 echo "=== Profile install complete ==="

@@ -484,7 +484,7 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
         "author": "Magic Hat Wizard",
         "description": "One sentence description",
         "requires_skills": [],
-        "familiar_version": ">=1.15.35"
+        "familiar_version": ">=1.15.37"
     }},
     "job_class": {{
         "key": "same_as_metadata_id",

@@ -170,7 +170,7 @@ usermod -aG video magichat 2>/dev/null || true
 
 # ── Install Familiar + Reflection ─────────────────────────────────────────────
 python3.11 -m pip install --upgrade pip
-python3.11 -m pip install "familiar-agent>=1.15.35"
+python3.11 -m pip install "familiar-agent>=1.15.37"
 python3.11 -m pip install "reflection-agent[full]>=2.0.54"
 
 # ── Graphical target ──────────────────────────────────────────────────────────
